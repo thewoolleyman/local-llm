@@ -5,11 +5,12 @@
 # invocation elsewhere is unaffected. See ../SPECIFICATION.md.
 #
 # Override defaults via env vars: LOCAL_LLM_HOST, LOCAL_LLM_PORT,
-# LOCAL_LLM_MODEL, LOCAL_LLM_API_KEY (or LOCAL_LLM_API_KEY_FILE).
+# LOCAL_LLM_MODEL, LOCAL_LLM_CONTEXT_WINDOW, LOCAL_LLM_API_KEY (or
+# LOCAL_LLM_API_KEY_FILE).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/local-llm-common.sh
+# shellcheck source=bin/lib/local-llm-common.sh
 source "$SCRIPT_DIR/lib/local-llm-common.sh"
 
 if ! command -v pi >/dev/null 2>&1; then
@@ -34,7 +35,7 @@ cat > "$PI_CODING_AGENT_DIR/models.json" <<EOF
         {
           "id": "$LOCAL_LLM_MODEL",
           "name": "Local LLM ($LOCAL_LLM_HOST)",
-          "contextWindow": 65536,
+          "contextWindow": $LOCAL_LLM_CONTEXT_WINDOW,
           "maxTokens": 8192
         }
       ]

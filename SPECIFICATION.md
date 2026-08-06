@@ -1,143 +1,347 @@
 # SPECIFICATION.md
 
-Concrete intents this repo is meant to realize, and how they were actually
-implemented. See [AGENTS.md](./AGENTS.md) for background/goal and
-per-host details, and [HANDOFF.md](./HANDOFF.md) for current
-point-in-time status/next-steps.
+Concrete intents this repo realizes, the deployed implementation, and the
+verified client workflow. See [AGENTS.md](./AGENTS.md) for host inventory and
+resource policy, and [HANDOFF.md](./HANDOFF.md) for the latest resume snapshot.
 
-## 1. Coder model server (implemented on `macbook-m4-max`, replicated on `macmini`)
+## 1. Current deployment
 
-- Runs under a **dedicated, non-admin "homelab" user** on `macbook-m4-max`,
-  separate from the `cwoolley` account (which is a desktop / music
-  production workstation and should not be touched by this).
-  - The homelab user has its own clean `~/Library/LaunchAgents` (no
-    Dropbox/Google Drive/Roland Cloud/Akai autostart, etc.) and its own
-    SSH keys / tooling, isolated from `cwoolley`'s files, browser
-    sessions, and DAW projects.
-- The server itself runs as a **LaunchDaemon** (`/Library/LaunchDaemons`),
-  not a per-user LaunchAgent — so it starts at boot and stays up
-  regardless of whether anyone is logged into the GUI console (e.g. while
-  `cwoolley` is doing music production), running as the homelab user via
-  the plist's `UserName` key, with `RunAtLoad` + `KeepAlive`.
-- **Server software**: `llama.cpp`'s `llama-server` (installed via a
-  per-`homelab`-user Homebrew prefix at `~/.homebrew`, not
-  `/opt/homebrew`), exposing an OpenAI-compatible API. It also exposes
-  `/v1/responses` (added recently to llama.cpp — translated internally to
-  chat completions), which is required for Codex (see §2).
-- **Model**: [Qwen3-Coder-Next](https://huggingface.co/Qwen/Qwen3-Coder-Next-GGUF)
-  (80B total / ~3B active MoE, 256K native context), verified real and
-  actively maintained — not to be confused with unverifiable/hallucinated
-  model claims (a "GLM-5.2-Air" was researched and debunked during
-  planning; the real GLM-5.2 needs 256GB+ and doesn't fit either host).
-  Quant is sized per host's unified memory:
-  - `macbook-m4-max` (128GB): **Q6_K**, 4-part GGUF, ~61GB on disk.
-  - `macmini` (64GB): **Q4_K_M**, 4-part GGUF, ~48.5GB on disk (lighter
-    quant needed to leave headroom in the smaller memory budget).
-  - Downloaded directly from Hugging Face via `curl -C -` (resumable —
-    safe to re-run the same command after any interruption; see
-    HANDOFF.md for exact per-host commands).
-  - Server started with `--alias qwen3-coder-next` so the model ID is
-    stable across hosts/quants — this is the ID the client wrapper
-    scripts default to.
-- **`--ctx-size` / `--parallel`**: `-np/--parallel` defaults to `-1`
-  (auto) and `llama-server` picks a slot count itself; with
-  `kv_unified=true` each slot got the *full* `--ctx-size`, not a divided
-  share, which was more generous than expected. Given `macmini`'s
-  tighter memory budget, its config sets `--parallel 2` explicitly rather
-  than relying on auto-selection. See HANDOFF.md for the exact flags
-  used per host and real observed throughput (~31 tok/s single-stream on
-  `macbook-m4-max`).
-- **Network exposure**: bind to the host's Tailscale IP specifically
-  (not `0.0.0.0`), resolved at every startup via the Tailscale CLI
-  (`/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4`) so it
-  survives IP changes — not hardcoded. Port `8080` on both hosts (no
-  conflict since they're different hosts).
-- **Auth**: `llama-server --api-key`, a random key generated during setup
-  (`openssl rand -hex 32`) and stored at `~/.llama-server-api-key`
-  (chmod 600) on each host's `homelab` user. Client machines need a copy
-  at `~/.config/local-llm/api-key` (outside this repo, never committed —
-  see §2).
-- **Startup**: a small wrapper script (`~/bin/run-llama-server.sh` on
-  each host's `homelab` user) resolves the Tailscale IP and reads the API
-  key at every launch, then `exec`s `llama-server` with the flags above.
-  A `LaunchDaemon` (`/Library/LaunchDaemons/local.homelab.llama-server.plist`,
-  `RunAtLoad`+`KeepAlive`, `UserName homelab`) runs that script — this is
-  what makes it start at boot and survive independent of any GUI login
-  state. Load with `sudo launchctl bootstrap system <plist path>`;
-  logs go to `~/Library/Logs/llama-server.log` / `.error.log` under the
-  `homelab` user (only readable as that user or via `sudo`).
+Both model servers and both client wrappers are complete and were reverified
+from `chads-macbook-pro` on 2026-08-06.
 
-## 2. Client-side wrapper scripts
+| Host | Model quant | Server context/concurrency | Client key file | State |
+|---|---|---|---|---|
+| `macbook-m4-max` | Qwen3-Coder-Next Q6_K, four shards, about 61 GB | 65,536-token unified KV cache; four auto-selected slots | `~/.config/local-llm/api-key` | LaunchDaemon running; API, Codex, and Pi verified |
+| `macmini` | Qwen3-Coder-Next Q4_K_M, four shards, 48,410,992,032 bytes | 32,768-token unified KV cache shared by two explicit slots | `~/.config/local-llm/api-key-macmini` | LaunchDaemon running; API, Codex, and Pi verified |
 
-Two scripts, checked into this repo under `bin/`, meant to be run from
-any machine on the tailnet (e.g. `chads-macbook-pro`) that has `codex`
-or `pi` installed:
+The deployed `llama-server` on both hosts reported llama.cpp version `10280`
+(`61881b1f7`) during final verification. The clients tested were Codex CLI
+`0.146.0` and Pi `0.83.0`.
 
-- **`bin/codex-local-llm`**
-- **`bin/pi-local-llm`**
+## 2. Server architecture
 
-Behavior common to both:
+Each host uses the same isolation pattern:
 
-- Default to pointing at the model server on `macbook-m4-max` over
-  Tailscale (host defaults to the Tailscale MagicDNS name; port and
-  model name have sane defaults) — no manual config editing required to
-  just run them.
-- All of host/port/model/API key are overridable via environment
-  variables, so the same scripts work if the model moves to a different
-  host or port.
-- Inject whatever provider config the wrapped CLI needs to talk to an
-  OpenAI-compatible endpoint (base URL, auth token, model name/remap,
-  wire format) **without mutating the user's normal global config** for
-  that CLI — e.g. via a dedicated config directory/profile the script
-  generates or updates, pointed to by an env var the CLI supports
-  (such as `CODEX_HOME` for Codex), rather than editing
-  `~/.codex/config.toml` or Pi's default config in place. This keeps a
-  normal `codex`/`pi` invocation (pointed at a real frontier model)
-  unaffected.
-- After preparing config, `exec` the real `codex`/`pi` binary, passing
-  through all script arguments untouched, so the wrapper is otherwise
-  transparent to the user.
-- Fail with a clear error (not a silent fallback) if the model server is
-  unreachable, rather than letting the underlying CLI fail with an
-  opaque connection error.
+- A dedicated, non-admin `homelab` user owns the model, runtime, API key,
+  wrapper, and logs. It does not use or modify `cwoolley`'s files, login items,
+  applications, or per-user Homebrew installation.
+- llama.cpp is installed in the `homelab` user's isolated Homebrew prefix at
+  `~/.homebrew`, not the system `/opt/homebrew` prefix.
+- `~/bin/run-llama-server.sh` resolves the host's current Tailscale IPv4 address
+  at every start with
+  `/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4`. The server binds
+  only that address on port `8080`, not `0.0.0.0`.
+- `/Library/LaunchDaemons/local.homelab.llama-server.plist` is a root-owned
+  system LaunchDaemon with `UserName=homelab`, `RunAtLoad`, and `KeepAlive`.
+  It therefore starts at boot and does not depend on a GUI login session.
+- Standard output and error go to
+  `~/Library/Logs/llama-server.log` and
+  `~/Library/Logs/llama-server.error.log` in the `homelab` home.
+- Each host has a different random `--api-key`, stored as
+  `~/.llama-server-api-key` with mode `0600`. Keys are copied to the client
+  outside this repo and must never be committed.
 
-Both scripts share config resolution + the reachability check via
-`bin/lib/local-llm-common.sh`. Defaults: `LOCAL_LLM_HOST=macbook-m4-max`,
-`LOCAL_LLM_PORT=8080`, `LOCAL_LLM_MODEL=qwen3-coder-next`, API key read
-from `LOCAL_LLM_API_KEY` env var or `~/.config/local-llm/api-key` file.
-**To point at `macmini` instead, override `LOCAL_LLM_HOST=macmini`** (and
-copy that host's API key to the key file, or pass `LOCAL_LLM_API_KEY`) —
-no code changes needed, this was already supported by the env-var design,
-just not exercised yet for a second host.
+The tailnet transport is Tailscale-encrypted. The llama.cpp endpoint itself is
+plain HTTP inside the tailnet. Generation endpoints additionally require the
+per-host bearer key; `/v1/models` metadata is intentionally public to the
+tailnet process endpoint.
 
-Implementation specifics discovered while building this (verified against
-the actual installed CLI binaries, not just docs):
+## 3. Model and per-host server flags
 
-- **Codex**: `wire_api = "chat"` was confirmed **removed** (not just
-  deprecated) in the currently-installed Codex CLI (v0.146.0) — the
-  string `"wire_api = \"chat\"" is no longer supported.` is literally in
-  the binary. Must use `wire_api = "responses"`, which works because
-  `llama.cpp`'s server added `/v1/responses` support. Config is written
-  to an isolated `CODEX_HOME` (`~/.config/local-llm/codex-home/config.toml`,
-  regenerated on every run) — confirmed via `codex doctor` that
-  `CODEX_HOME` fully relocates Codex's config/state dir. The wrapper
-  deliberately does **not** set `approval_policy`/`sandbox_mode` — it
-  leaves Codex's normal safe interactive-approval defaults in place,
-  since a local, less-trustworthy model running with
-  `danger-full-access`/`never`-approval and weak tool-call discipline is
-  a real risk, not just a convenience tradeoff.
-- **Pi**: uses its native `openai-completions` provider type directly
-  against `/v1/chat/completions` — no translation needed at all. Config
-  is a generated `models.json` under an isolated `PI_CODING_AGENT_DIR`
-  (`~/.config/local-llm/pi-home`, default is `~/.pi/agent`). Model
-  selection is via `pi --model local-llm/qwen3-coder-next`.
-- Both wrappers were smoke-tested end-to-end against the live
-  `macbook-m4-max` server (`codex exec "..."` and `pi --print "..."`,
-  both correctly round-tripped through the real model).
+The model is
+[Qwen3-Coder-Next](https://huggingface.co/Qwen/Qwen3-Coder-Next-GGUF),
+an 80B-total/~3B-active MoE coding model with 256K native context. The deployed
+context is deliberately smaller to fit useful concurrency and memory headroom.
+Both hosts use `--alias qwen3-coder-next`, so clients use one stable model ID
+regardless of the host-specific quant.
 
-## Out of scope for now
+Qwen3-Coder-Next was confirmed against its primary Hugging Face repository. An
+earlier research artifact claimed a smaller model named `GLM-5.2-Air` existed;
+during original selection, primary-source checks did not find such a release,
+while the real full GLM-5.2 did not fit these hosts. That unverified alternative
+is deliberately excluded.
 
-- CI runner setup on the homelab user (mentioned as a future use case,
-  not part of this spec).
-- Automatic model updates/swapping.
+### `macbook-m4-max`
+
+- Model path:
+  `~/models/Qwen3-Coder-Next-Q6_K/Qwen3-Coder-Next-Q6_K-00001-of-00004.gguf`
+- Quant: Q6_K, four GGUF shards, about 61 GB on disk.
+- Important flags:
+
+  ```text
+  --ctx-size 65536
+  --n-gpu-layers 999
+  --flash-attn on
+  --alias qwen3-coder-next
+  ```
+
+- `--parallel` remains auto (`-1`). The verified startup log reported four
+  slots, `n_ctx_slot = 65536`, and `kv_unified = true`.
+- Earlier single-stream testing observed about 31 generated tokens/second;
+  throughput varies with prompt size, concurrency, and workload.
+
+### `macmini`
+
+- Model path:
+  `~/models/Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00001-of-00004.gguf`
+- Quant: Q4_K_M, four GGUF shards. Final shard sizes were verified against the
+  remote HTTP sizes and then accepted by llama.cpp:
+
+  ```text
+  15,524,827,040  Qwen3-Coder-Next-Q4_K_M-00001-of-00004.gguf
+  14,872,168,352  Qwen3-Coder-Next-Q4_K_M-00002-of-00004.gguf
+  14,503,294,496  Qwen3-Coder-Next-Q4_K_M-00003-of-00004.gguf
+   3,510,702,144  Qwen3-Coder-Next-Q4_K_M-00004-of-00004.gguf
+  ```
+
+- Important flags:
+
+  ```text
+  --ctx-size 32768
+  --parallel 2
+  --kv-unified
+  --n-gpu-layers 999
+  --flash-attn on
+  --alias qwen3-coder-next
+  ```
+
+- `--kv-unified` must be explicit here. llama.cpp enables it automatically when
+  slot count is auto, but not when `--parallel 2` is explicit. Without this
+  flag, the first startup divided the 32K budget into two 16K slot contexts.
+  After correction, the verified log reported two slots,
+  `n_ctx_slot = 32768`, and `kv_unified = true`. The two sequences share the
+  unified 32K KV capacity.
+- The first uncached model load took about 52 seconds. A wrapper should treat
+  startup as complete only after `/v1/models` answers, not merely when
+  `launchctl` says the process is running.
+
+Downloads use `curl -C -` and are resumable. Exact commands are kept in Git
+history; no download remains in progress.
+
+## 4. API behavior and lifecycle
+
+llama.cpp exposes the OpenAI-compatible endpoints needed by the clients:
+
+- `/v1/models` for reachability and model discovery. llama.cpp intentionally
+  serves this metadata even when the bearer key is wrong; it is not an
+  authentication test.
+- `/v1/chat/completions` for Pi's `openai-completions` provider.
+- `/v1/responses` for current Codex CLI. llama.cpp translates Responses API
+  requests internally to its chat-completion machinery.
+
+The service is managed as a system daemon:
+
+```bash
+ssh macbook-m4-max \
+  'sudo launchctl print system/local.homelab.llama-server'
+ssh macmini \
+  'sudo launchctl print system/local.homelab.llama-server'
+```
+
+Logs must be read as `homelab` or through `sudo`:
+
+```bash
+ssh macbook-m4-max-homelab \
+  'tail -50 ~/Library/Logs/llama-server.error.log'
+ssh macmini-homelab \
+  'tail -50 ~/Library/Logs/llama-server.error.log'
+```
+
+A healthy startup ends with `model loaded` and a Tailscale-only listening URL.
+`launchctl` process state alone is insufficient while the model is loading.
+
+## 5. Client wrapper contract
+
+The supported entry points are:
+
+- `bin/codex-local-llm`
+- `bin/pi-local-llm`
+- shared logic in `bin/lib/local-llm-common.sh`
+
+Both wrappers:
+
+- Default to `macbook-m4-max:8080` and model ID `qwen3-coder-next`.
+- Select the matching default API-key file and advertised context window for
+  the two known hosts.
+- Accept environment overrides without editing the scripts.
+- Probe `/v1/models` for readiness, then validate the bearer key with a
+  deliberately invalid `{}` request to protected `/v1/chat/completions`. A
+  correct key reaches payload validation (`400`) without running inference; a
+  wrong key is rejected (`401`).
+- Distinguish a key mismatch from an unreachable or unhealthy server and fail
+  clearly instead of allowing an opaque downstream connection error.
+- Generate isolated client configuration, then `exec` the real CLI with all
+  user arguments unchanged.
+- Do not mutate `~/.codex/config.toml`, `~/.pi/agent`, or the user's normal
+  frontier-provider configuration.
+
+Known-host defaults are:
+
+| `LOCAL_LLM_HOST` | `LOCAL_LLM_API_KEY_FILE` default | `LOCAL_LLM_CONTEXT_WINDOW` default |
+|---|---|---:|
+| `macbook-m4-max` or any other host | `~/.config/local-llm/api-key` | 65,536 |
+| `macmini`, its FQDN, or `100.99.172.34` | `~/.config/local-llm/api-key-macmini` | 32,768 |
+
+Supported overrides:
+
+| Variable | Purpose |
+|---|---|
+| `LOCAL_LLM_HOST` | Tailscale hostname or IP |
+| `LOCAL_LLM_PORT` | llama-server port |
+| `LOCAL_LLM_MODEL` | stable API model ID |
+| `LOCAL_LLM_CONTEXT_WINDOW` | context size advertised to Codex and Pi; must match server capacity |
+| `LOCAL_LLM_API_KEY` | bearer key supplied directly; takes precedence over a file |
+| `LOCAL_LLM_API_KEY_FILE` | file containing the selected host's bearer key |
+| `LOCAL_LLM_CONFIG_DIR` | parent of the generated isolated Codex/Pi state directories |
+
+### Client key installation
+
+These files already exist on `chads-macbook-pro`. To rebuild them on another
+tailnet client:
+
+```bash
+install -d -m 700 ~/.config/local-llm
+umask 077
+ssh macbook-m4-max-homelab 'cat ~/.llama-server-api-key' \
+  > ~/.config/local-llm/api-key
+ssh macmini-homelab 'cat ~/.llama-server-api-key' \
+  > ~/.config/local-llm/api-key-macmini
+chmod 600 ~/.config/local-llm/api-key \
+  ~/.config/local-llm/api-key-macmini
+```
+
+### Normal use
+
+The M4 Max is the default, so it needs no host override:
+
+```bash
+./bin/codex-local-llm
+./bin/pi-local-llm
+```
+
+Select the Mac mini with one environment variable; its key file and 32K client
+context are selected automatically:
+
+```bash
+LOCAL_LLM_HOST=macmini ./bin/codex-local-llm
+LOCAL_LLM_HOST=macmini ./bin/pi-local-llm
+```
+
+Noninteractive examples:
+
+```bash
+./bin/codex-local-llm exec 'Explain the current repository'
+./bin/pi-local-llm --print 'Explain the current repository'
+
+LOCAL_LLM_HOST=macmini \
+  ./bin/codex-local-llm exec 'Run the relevant tests'
+LOCAL_LLM_HOST=macmini \
+  ./bin/pi-local-llm --print 'Inspect this repository'
+```
+
+## 6. Codex-specific configuration
+
+`bin/codex-local-llm` regenerates
+`~/.config/local-llm/codex-home/config.toml` on every run and exports that
+directory as `CODEX_HOME`. `CODEX_HOME` relocates Codex configuration and state,
+so the normal `~/.codex` setup remains untouched.
+
+The generated configuration selects a custom provider with:
+
+- `base_url = "http://<host>:8080/v1"`
+- `env_key = "LOCAL_LLM_API_KEY"`
+- `wire_api = "responses"`
+- `model_context_window` matching the selected server
+
+Current Codex supports only `wire_api = "responses"` for a custom provider.
+`wire_api = "chat"` is removed in the installed CLI, not merely deprecated;
+the binary emits `wire_api = "chat" is no longer supported.` This is why the
+server's `/v1/responses` endpoint is a hard requirement.
+
+Codex prints a non-fatal warning that built-in model metadata for
+`qwen3-coder-next` is unavailable. The wrapper now supplies the actual context
+window explicitly, preventing Codex from relying on fallback context size, but
+the warning itself is expected because this open-weight model is not in
+Codex's built-in catalog.
+
+The wrapper deliberately does not set `approval_policy` or `sandbox_mode`.
+Interactive Codex therefore retains its own current safety defaults. In final
+noninteractive verification, `codex exec` reported `approval: never` together
+with `sandbox: read-only`; do not broaden a local model to unapproved host
+access merely for convenience.
+
+## 7. Pi-specific configuration
+
+`bin/pi-local-llm` regenerates
+`~/.config/local-llm/pi-home/models.json`, exports that directory as
+`PI_CODING_AGENT_DIR`, and starts:
+
+```text
+pi --model local-llm/qwen3-coder-next <all original arguments>
+```
+
+The generated model uses Pi's native `openai-completions` provider against
+`/v1/chat/completions`, references `$LOCAL_LLM_API_KEY` instead of writing the
+secret into JSON, advertises the selected host's real context window, and caps
+individual model output at 8,192 tokens.
+
+## 8. Final verification evidence
+
+On 2026-08-06, from `chads-macbook-pro`:
+
+- Both LaunchDaemons were `running` with no crash exit.
+- Both `/v1/models` endpoints returned model ID `qwen3-coder-next`; protected
+  generation endpoints separately accepted each host's bearer key.
+- A direct Mac mini `/v1/responses` request returned `pong`.
+- Codex and Pi returned `pong` through the default M4 Max wrapper path.
+- Codex and Pi returned `pong` through `LOCAL_LLM_HOST=macmini` using automatic
+  Mini key/context selection.
+- Codex and Pi each successfully used their shell tool to run
+  `git rev-parse --short HEAD` and returned the then-current repository commit,
+  proving an agent tool loop rather than text completion alone.
+
+Useful repeatable smoke tests:
+
+```bash
+./bin/codex-local-llm exec 'Reply with exactly the word: pong'
+./bin/pi-local-llm --print 'Reply with exactly the word: pong'
+
+LOCAL_LLM_HOST=macmini \
+  ./bin/codex-local-llm exec 'Reply with exactly the word: pong'
+LOCAL_LLM_HOST=macmini \
+  ./bin/pi-local-llm --print 'Reply with exactly the word: pong'
+```
+
+## 9. Resource and safety constraints
+
+Apple Silicon uses unified memory. Fast User Switching does not release the
+resident memory held by `cwoolley`'s desktop session. Steady-state inference is
+the intended concurrent workload and has been verified. Before running
+open-ended heavy jobs such as CI builds, containers, or parallel compilation as
+`homelab`, fully log `cwoolley` out as required by [AGENTS.md](./AGENTS.md).
+
+The local open-weight model should be treated as less reliable at tool-policy
+discipline than a frontier service. Keep agent approval and sandbox boundaries
+in place, review destructive commands, and never expose the server on
+`0.0.0.0` or commit either API key.
+
+Operational gotchas already encountered:
+
+- A new macOS local user can accept an SSH public key and still be denied after
+  authentication until added to `com.apple.access_ssh`. Both `homelab` users
+  are already added.
+- `macmini` previously slept during an unattended download. Its system sleep is
+  now `0`; recheck `pmset -g` if a future remote job stalls.
+- Killing the local side of an SSH session does not prove a remote `curl` or
+  `caffeinate` child stopped. Inspect the remote process table explicitly.
+- llama.cpp currently warns that its future default port will become `9931`.
+  This deployment is unaffected because both wrappers and daemons explicitly
+  set port `8080`.
+
+## 10. Out of scope
+
+- CI runner setup on either `homelab` user.
+- Automatic model updates, quant switching, or failover between hosts.
 - MLX-based serving.
+- Load balancing across the two hosts. Host selection is explicit through
+  `LOCAL_LLM_HOST`.
