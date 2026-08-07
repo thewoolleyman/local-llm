@@ -6,8 +6,8 @@ resource policy, and [HANDOFF.md](./HANDOFF.md) for the latest resume snapshot.
 
 ## 1. Current deployment
 
-Both model servers and both client wrappers are complete and were reverified
-from `chads-macbook-pro` on 2026-08-06.
+Both model servers, the fleet router, and the client workflows are complete and
+were reverified from `chads-macbook-pro` on 2026-08-07.
 
 | Host | Model quant | Server context/concurrency | Client key file | State |
 |---|---|---|---|---|
@@ -15,8 +15,8 @@ from `chads-macbook-pro` on 2026-08-06.
 | `macmini` | Qwen3-Coder-Next Q4_K_M, four shards, 48,410,992,032 bytes | 32,768-token unified KV cache shared by two explicit slots | `~/.config/local-llm/api-key-macmini` | LaunchDaemon running; API, Codex, and Pi verified |
 
 The deployed `llama-server` on both hosts reported llama.cpp version `10280`
-(`61881b1f7`) during final verification. The clients tested were Codex CLI
-`0.146.0` and Pi `0.83.0`.
+(`61881b1f7`) during final verification. The fleet router is llama-swap `v247`.
+The clients tested were Codex CLI `0.147.0` and Pi `0.83.0`.
 
 ## 2. Server architecture
 
@@ -150,7 +150,59 @@ ssh macmini-homelab \
 A healthy startup ends with `model loaded` and a Tailscale-only listening URL.
 `launchctl` process state alone is insufficient while the model is loading.
 
-## 5. Client wrapper contract
+## 5. Tailscale fleet router
+
+The Mac mini also runs a `llama-swap` fleet router as the `homelab` user. It
+does not replace or duplicate either existing `llama-server`; it proxies their
+already-running OpenAI-compatible endpoints and selects the peer from the
+requested model ID.
+
+### Deployment
+
+- Binary: `~/.homebrew/bin/llama-swap`, installed from the
+  `mostlygeek/llama-swap` Homebrew tap in the `homelab`-owned Homebrew prefix.
+- Config: `~/.config/llama-swap/config.yaml`.
+- Secret environment file: `~/.config/llama-swap/secrets.env`, mode `0600`,
+  owned by `homelab`; it contains the router key and the two upstream
+  llama-server keys. It is never committed.
+- Launcher: `~/bin/run-llama-swap.sh`.
+- Listener: `100.99.172.34:8081`, Tailscale-only; it is not bound to
+  `0.0.0.0`.
+- Boot service:
+  `/Library/LaunchDaemons/local.homelab.llama-swap.plist`, root-owned,
+  `UserName=homelab`, `RunAtLoad`, and `KeepAlive`.
+- Logs: `~/Library/Logs/llama-swap.log` and
+  `~/Library/Logs/llama-swap.error.log`.
+
+The checked-in deployment templates are under
+[`deploy/llama-swap/`](./deploy/llama-swap/). The config has two current peers:
+
+| Router model ID | Upstream | Context |
+|---|---|---:|
+| `macmini/qwen3-coder-next` | `100.99.172.34:8080` / Q4_K_M | 32,768 |
+| `m4max/qwen3-coder-next` | `100.125.10.110:8080` / Q6_K | 65,536 |
+
+To add a future host, add a peer entry to the deployed config with its
+Tailscale address, an environment-variable reference for its bearer key, and
+the model IDs it serves. Keep the corresponding secret only in
+`secrets.env`; do not add keys to YAML, plist, Git, or Codex metadata.
+
+### Router checks
+
+Run these from a tailnet client:
+
+```bash
+ssh macmini 'sudo launchctl print system/local.homelab.llama-swap'
+curl -H "Authorization: Bearer $CODEX_LOCAL_ROUTER_KEY" \
+  http://macmini:8081/v1/models
+```
+
+`/v1/models` reports the qualified peer IDs. Inference endpoints require the
+router bearer key; llama-swap injects the matching upstream key when forwarding
+to each peer. The first request to a cold server may take roughly a minute
+while its model loads.
+
+## 6. Client wrapper contract
 
 The supported entry points are:
 
@@ -256,7 +308,7 @@ LOCAL_LLM_HOST=macmini \
   ./bin/pi-local-llm --print 'Inspect this repository'
 ```
 
-## 6. Codex-specific configuration
+## 7. Codex-specific configuration
 
 `bin/codex-local-llm` regenerates
 `~/.config/local-llm/codex-home/config.toml` on every run and exports that
@@ -289,7 +341,40 @@ noninteractive verification, `codex exec` reported `approval: never` together
 with `sandbox: read-only`; do not broaden a local model to unapproved host
 access merely for convenience.
 
-## 7. Pi-specific configuration
+### Normal Codex fleet profile
+
+For wrapper-free testing, the user's normal Codex installation has a separate
+profile at `~/.codex/local-llm.config.toml`. It points at the Mac mini router,
+uses the router model catalog, and reads the local router key through Codex's
+command-backed provider authentication. The router profile does not replace
+the normal frontier default in `~/.codex/config.toml`.
+
+Start an interactive fleet session with:
+
+```bash
+codex --profile local-llm
+```
+
+Inside that session, `/models` lists:
+
+```text
+macmini/qwen3-coder-next
+m4max/qwen3-coder-next
+```
+
+The noninteractive smoke test is:
+
+```bash
+codex --profile local-llm --ask-for-approval never \
+  --sandbox read-only exec 'Reply with exactly the word: pong'
+```
+
+The checked-in router catalog is
+[`codex-metadata/local-router-model-catalog.json`](./codex-metadata/local-router-model-catalog.json).
+Codex loads model catalogs at startup, so restart the session after changing
+the catalog or profile.
+
+## 8. Pi-specific configuration
 
 `bin/pi-local-llm` regenerates
 `~/.config/local-llm/pi-home/models.json`, exports that directory as
@@ -304,13 +389,19 @@ The generated model uses Pi's native `openai-completions` provider against
 secret into JSON, advertises the selected host's real context window, and caps
 individual model output at 8,192 tokens.
 
-## 8. Final verification evidence
+## 9. Final verification evidence
 
-On 2026-08-06, from `chads-macbook-pro`:
+On 2026-08-07, from `chads-macbook-pro`:
 
 - Both LaunchDaemons were `running` with no crash exit.
+- `local.homelab.llama-swap` was `running` as a boot-time LaunchDaemon on
+  `macmini`.
+- The router `/v1/models` endpoint returned both
+  `m4max/qwen3-coder-next` and `macmini/qwen3-coder-next`.
 - Both `/v1/models` endpoints returned model ID `qwen3-coder-next`; protected
   generation endpoints separately accepted each host's bearer key.
+- `codex --profile local-llm --ask-for-approval never --sandbox read-only exec`
+  returned `pong` through the Mac mini router.
 - A direct Mac mini `/v1/responses` request returned `pong`.
 - Codex and Pi returned `pong` through the default M4 Max wrapper path.
 - Codex and Pi returned `pong` through `LOCAL_LLM_HOST=macmini` using automatic
@@ -331,7 +422,7 @@ LOCAL_LLM_HOST=macmini \
   ./bin/pi-local-llm --print 'Reply with exactly the word: pong'
 ```
 
-## 9. Resource and safety constraints
+## 10. Resource and safety constraints
 
 Apple Silicon uses unified memory. Fast User Switching does not release the
 resident memory held by `cwoolley`'s desktop session. Steady-state inference is
@@ -357,7 +448,7 @@ Operational gotchas already encountered:
   This deployment is unaffected because both wrappers and daemons explicitly
   set port `8080`.
 
-## 10. Out of scope
+## 11. Out of scope
 
 - CI runner setup on either `homelab` user.
 - Automatic model updates, quant switching, or failover between hosts.

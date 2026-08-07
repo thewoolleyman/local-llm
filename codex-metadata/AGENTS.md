@@ -31,6 +31,12 @@ and a provider whose `base_url` points at the local server's `/v1` endpoint.
 `CODEX_HOME`, so no edit to `~/.codex/config.toml` is needed. This keeps local
 LLM state separate from the user's normal OpenAI Codex installation.
 
+The wrapper catalog intentionally retains the unqualified `qwen3-coder-next`
+ID for direct per-host wrapper use. The wrapper-free fleet profile uses the
+separate [`local-router-model-catalog.json`](./local-router-model-catalog.json)
+with the qualified router IDs `macmini/qwen3-coder-next` and
+`m4max/qwen3-coder-next`; start it with `codex --profile local-llm`.
+
 Verify the catalog parses before launching a session:
 
 ```bash
