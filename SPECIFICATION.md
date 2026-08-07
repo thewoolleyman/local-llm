@@ -343,11 +343,30 @@ access merely for convenience.
 
 ### Normal Codex fleet profile
 
-For wrapper-free testing, the user's normal Codex installation has a separate
-profile at `~/.codex/local-llm.config.toml`. It points at the Mac mini router,
-uses the router model catalog, and reads the local router key through Codex's
-command-backed provider authentication. The router profile does not replace
-the normal frontier default in `~/.codex/config.toml`.
+The user's normal Codex installation now has a merged catalog at
+`~/.codex/model-catalog-with-local.json`. It contains the current frontier
+catalog from `~/.codex/models_cache.json` plus the two router-qualified local
+entries. `~/.codex/config.toml` points `model_catalog_json` at that merged
+file and defines the `local-llm-fleet` provider, so the normal model picker
+shows both local router models alongside the frontier models.
+
+The merged catalog is a local generated artifact rather than a repository
+file. When Codex refreshes `models_cache.json` after a client update, rebuild it
+with:
+
+```bash
+jq --slurpfile local \
+  /Users/cwoolley/workspace/local-llm/codex-metadata/local-router-model-catalog.json \
+  '.models += $local[0].models' \
+  ~/.codex/models_cache.json > ~/.codex/model-catalog-with-local.json
+chmod 600 ~/.codex/model-catalog-with-local.json
+```
+
+Codex's `model_provider` setting is global. It is intentionally not set to
+`local-llm-fleet` in the normal config, because that would send the existing
+frontier default to the local router. To actually run a local model while
+keeping the normal frontier default safe, use the separate profile at
+`~/.codex/local-llm.config.toml`:
 
 Start an interactive fleet session with:
 
