@@ -8,9 +8,11 @@ remotely — primarily so **Claude Code, Codex, and Pi running on
 `chads-macbook-pro`** can point at a locally-hosted open-weight coding
 model instead of (or alongside) a frontier API.
 
-See [SPECIFICATION.md](./SPECIFICATION.md) for the concrete deliverables
-and their current status, and [HANDOFF.md](./HANDOFF.md) for a
-point-in-time snapshot to resume work from a fresh context.
+Read [SPECIFICATION.md](./SPECIFICATION.md) first for the context on how the
+hosts, servers, fleet router, Codex/Pi clients, provider selection, and
+verification workflow fit together. It contains the concrete deliverables
+and their current status. Read [HANDOFF.md](./HANDOFF.md) for a point-in-time
+snapshot to resume work from a fresh context.
 
 ## Hosts
 
@@ -66,6 +68,24 @@ and keeps it fully separate from `cwoolley`'s Homebrew if any), running
 
 Agents driving this setup should SSH over the Tailscale hostnames above
 rather than assuming local shell access on either host.
+
+## Client/provider workflow
+
+The supported local-model path is the repository's `bin/codex-local-llm`
+wrapper or the standalone Codex `local-llm` profile documented in
+`SPECIFICATION.md` §7. Read that section before changing Codex configuration;
+it explains the router URL, bearer-key placement, model catalog, and the
+distinction between the normal OpenAI provider and the local fleet provider.
+
+`model_provider` is selected when a Codex process starts. A per-invocation
+override such as `-c model_provider=local-llm-fleet` does not define a provider
+and cannot repair an incomplete client installation. The target machine must
+already have the matching `[model_providers.local-llm-fleet]` configuration,
+router reachability, and a client-side router key. On a new client, prefer the
+repository wrapper/profile setup rather than copying secrets into Git or
+changing the normal frontier-provider default. Start a new Codex process when
+switching providers; do not assume an existing interactive session can change
+transport mid-session.
 
 ## Resource management
 

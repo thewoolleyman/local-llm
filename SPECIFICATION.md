@@ -362,6 +362,73 @@ jq --slurpfile local \
 chmod 600 ~/.codex/model-catalog-with-local.json
 ```
 
+### Provider selection and portable standalone clients
+
+Codex's `model_provider` is a process-level routing setting, separate from the
+model catalog. The normal OpenAI/ChatGPT-backed provider must remain the
+default for ordinary frontier sessions; setting `model_provider =
+"local-llm-fleet"` globally would send an OpenAI model to the local router.
+Start a new Codex process to change providers. An already-running interactive
+session should not be expected to change its transport/provider mid-session.
+
+The preferred paths are the repository wrapper (`bin/codex-local-llm`) or the
+standalone `local-llm` profile above. For a client that already has the
+provider definition and catalog, a temporary provider override can be used
+without editing the normal config:
+
+```bash
+# Force the local provider, then use the model picker.
+codex -c model_provider=local-llm-fleet
+
+# Force the normal OpenAI provider, then use the frontier-model picker.
+codex -c model_provider=openai
+```
+
+`-m` is optional when launching the picker. Use it when a deterministic model
+is wanted, for example:
+
+```bash
+codex -c model_provider=local-llm-fleet -m m4max/qwen3-coder-next
+codex -c model_provider=openai -m gpt-5.6-terra
+```
+
+The picker may display catalog entries that are not servable by the selected
+provider. Choose a model belonging to the provider forced for that process.
+The `--oss` option is for Codex's built-in Ollama/LM Studio paths; it is not
+the switch for this Tailscale fleet router.
+
+The `-c model_provider=...` override only selects a named provider; it does
+not create that provider. Every standalone client must have a matching
+provider definition before the override can work. A client without it fails
+early with `Model provider local-llm-fleet not found`. The minimum definition
+for a client reaching the Mac mini router is:
+
+```toml
+[model_providers.local-llm-fleet]
+name = "Local LLM fleet router"
+base_url = "http://macmini:8081/v1"
+wire_api = "responses"
+
+[model_providers.local-llm-fleet.auth]
+command = "cat"
+args = ["/home/<client-user>/.config/local-llm/codex-router-key"]
+timeout_ms = 1000
+```
+
+Replace `<client-user>` with the actual account on that client. Install the
+router bearer key out of band with mode `0600`; never commit it. Before
+debugging Codex, verify the client can reach the router:
+
+```bash
+curl http://macmini:8081/v1/models
+```
+
+The model catalog is also client-local. A standalone client may use `-m`
+explicitly after defining the provider, but the picker requires the merged
+catalog or the checked-in local router catalog to be installed and referenced
+in that client's `CODEX_HOME`/config. The repository wrapper handles this
+isolation automatically.
+
 Codex's `model_provider` setting is global. It is intentionally not set to
 `local-llm-fleet` in the normal config, because that would send the existing
 frontier default to the local router. To actually run a local model while
