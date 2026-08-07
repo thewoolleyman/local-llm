@@ -10,11 +10,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CODEX_MODEL_CATALOG="$REPO_DIR/codex-metadata/model-catalog.json"
 # shellcheck source=bin/lib/local-llm-common.sh
 source "$SCRIPT_DIR/lib/local-llm-common.sh"
 
 if ! command -v codex >/dev/null 2>&1; then
   echo "error: codex is not installed / not on PATH" >&2
+  exit 1
+fi
+
+if [[ ! -f "$CODEX_MODEL_CATALOG" ]]; then
+  echo "error: Codex model catalog is missing: $CODEX_MODEL_CATALOG" >&2
   exit 1
 fi
 
@@ -28,6 +35,7 @@ cat > "$CODEX_HOME/config.toml" <<EOF
 model = "$LOCAL_LLM_MODEL"
 model_provider = "local-llm"
 model_context_window = $LOCAL_LLM_CONTEXT_WINDOW
+model_catalog_json = "$CODEX_MODEL_CATALOG"
 
 [model_providers.local-llm]
 name = "Local LLM ($LOCAL_LLM_HOST)"

@@ -175,6 +175,23 @@ Both wrappers:
 - Do not mutate `~/.codex/config.toml`, `~/.pi/agent`, or the user's normal
   frontier-provider configuration.
 
+### Codex model metadata
+
+Codex's model name and provider settings are separate from its model metadata.
+If a custom model is absent from the startup catalog, Codex emits
+`Model metadata for ... not found. Defaulting to fallback metadata`, even when
+the endpoint is reachable. The checked-in
+[`codex-metadata/model-catalog.json`](./codex-metadata/model-catalog.json)
+declares the stable `qwen3-coder-next` model ID with protocol-valid fields,
+including the deployed 65,536-token context and local coding-tool capabilities.
+
+`bin/codex-local-llm` writes an absolute `model_catalog_json` entry into its
+isolated `CODEX_HOME/config.toml`, so the warning is fixed without touching a
+normal Codex installation. A standalone installation can follow
+[`codex-metadata/AGENTS.md`](./codex-metadata/AGENTS.md); Codex loads this file
+only at startup, so restart after changing the path. The catalog intentionally
+contains no API keys, hostnames, or other secrets.
+
 Known-host defaults are:
 
 | `LOCAL_LLM_HOST` | `LOCAL_LLM_API_KEY_FILE` default | `LOCAL_LLM_CONTEXT_WINDOW` default |
