@@ -275,11 +275,13 @@ Current Codex supports only `wire_api = "responses"` for a custom provider.
 the binary emits `wire_api = "chat" is no longer supported.` This is why the
 server's `/v1/responses` endpoint is a hard requirement.
 
-Codex prints a non-fatal warning that built-in model metadata for
-`qwen3-coder-next` is unavailable. The wrapper now supplies the actual context
-window explicitly, preventing Codex from relying on fallback context size, but
-the warning itself is expected because this open-weight model is not in
-Codex's built-in catalog.
+The wrapper also sets `model_catalog_json` to the checked-in
+`codex-metadata/model-catalog.json`. This supplies protocol-valid metadata for
+`qwen3-coder-next`, including the context window and tool capabilities, so the
+fallback-metadata warning is not emitted. This setting exists only in the
+wrapper's isolated `CODEX_HOME`; the normal `~/.codex/config.toml` is not
+changed and ordinary `codex` launches continue using their existing model and
+provider settings.
 
 The wrapper deliberately does not set `approval_policy` or `sandbox_mode`.
 Interactive Codex therefore retains its own current safety defaults. In final

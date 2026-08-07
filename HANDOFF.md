@@ -33,6 +33,11 @@ LOCAL_LLM_HOST=macmini ./bin/codex-local-llm
 LOCAL_LLM_HOST=macmini ./bin/pi-local-llm
 ```
 
+The Codex wrapper loads `codex-metadata/model-catalog.json` into its isolated
+`~/.config/local-llm/codex-home/config.toml`. This prevents the
+`qwen3-coder-next` fallback-metadata warning without modifying the normal
+`~/.codex/config.toml`; use plain `codex` for the existing frontier setup.
+
 Repeatable noninteractive checks:
 
 ```bash
@@ -114,7 +119,8 @@ wrong. Confirm the per-host client key file rather than restarting the daemon.
 
 ## Locations
 
-- Repo: `AGENTS.md`, `SPECIFICATION.md`, `HANDOFF.md`, and `bin/` wrappers.
+- Repo: `AGENTS.md`, `SPECIFICATION.md`, `HANDOFF.md`, `codex-metadata/`, and
+  `bin/` wrappers.
 - Client secrets/state:
   `~/.config/local-llm/api-key`,
   `~/.config/local-llm/api-key-macmini`,
