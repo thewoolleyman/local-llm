@@ -503,8 +503,9 @@ pi --provider local-llm <all original arguments>
 
 The generated provider exposes both `macmini/qwen3-coder-next` and
 `m4max/qwen3-coder-next`, uses Pi's native `openai-completions` provider against
-the fleet router's `/v1/chat/completions`, references
-`$LOCAL_LLM_ROUTER_API_KEY` instead of writing the secret into JSON, and caps
+the fleet router's `/v1/chat/completions`, resolves the exported
+`LOCAL_LLM_ROUTER_API_KEY` through Pi's command-backed `apiKey` configuration
+instead of writing the secret into JSON or process arguments, and caps
 individual model output at 8,192 tokens. Pi's normal model picker/cycling and
 session state remain in charge.
 

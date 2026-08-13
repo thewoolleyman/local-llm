@@ -37,7 +37,7 @@ cat > "$PI_CODING_AGENT_DIR/models.json" <<EOF
     "local-llm": {
       "baseUrl": "$(local_llm_router_base_url)",
       "api": "openai-completions",
-      "apiKey": "\$LOCAL_LLM_ROUTER_API_KEY",
+      "apiKey": "!printf '%s' \"\$LOCAL_LLM_ROUTER_API_KEY\"",
       "models": [
         {
           "id": "macmini/qwen3-coder-next",
