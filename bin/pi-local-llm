@@ -1,15 +1,22 @@
 #!/bin/bash
-# Runs `pi` pointed at the local model server on macbook-m4-max (over
-# Tailscale) instead of a real provider account. Does not touch the normal
-# ~/.pi/agent config — uses an isolated PI_CODING_AGENT_DIR so a plain `pi`
-# invocation elsewhere is unaffected. See ../SPECIFICATION.md.
+# Runs `pi` against the local fleet router (over Tailscale). It exposes all
+# fleet models and leaves model selection to Pi's normal picker/cycling.
 #
-# Override defaults via env vars: LOCAL_LLM_HOST, LOCAL_LLM_PORT,
-# LOCAL_LLM_MODEL, LOCAL_LLM_CONTEXT_WINDOW, LOCAL_LLM_API_KEY (or
-# LOCAL_LLM_API_KEY_FILE).
+# Override router location/key with LOCAL_LLM_ROUTER_HOST,
+# LOCAL_LLM_ROUTER_PORT, LOCAL_LLM_ROUTER_API_KEY, or
+# LOCAL_LLM_ROUTER_API_KEY_FILE.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE_PATH" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+  SOURCE_PATH="$(readlink "$SOURCE_PATH")"
+  case "$SOURCE_PATH" in
+    /*) ;;
+    *) SOURCE_PATH="$SOURCE_DIR/$SOURCE_PATH" ;;
+  esac
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
 # shellcheck source=bin/lib/local-llm-common.sh
 source "$SCRIPT_DIR/lib/local-llm-common.sh"
 
@@ -18,8 +25,8 @@ if ! command -v pi >/dev/null 2>&1; then
   exit 1
 fi
 
-local_llm_require_api_key
-local_llm_check_reachable
+local_llm_require_router_key
+local_llm_check_router_reachable
 
 PI_CODING_AGENT_DIR="$LOCAL_LLM_CONFIG_DIR/pi-home"
 mkdir -p "$PI_CODING_AGENT_DIR"
@@ -28,14 +35,20 @@ cat > "$PI_CODING_AGENT_DIR/models.json" <<EOF
 {
   "providers": {
     "local-llm": {
-      "baseUrl": "$(local_llm_base_url)",
+      "baseUrl": "$(local_llm_router_base_url)",
       "api": "openai-completions",
-      "apiKey": "\$LOCAL_LLM_API_KEY",
+      "apiKey": "\$LOCAL_LLM_ROUTER_API_KEY",
       "models": [
         {
-          "id": "$LOCAL_LLM_MODEL",
-          "name": "Local LLM ($LOCAL_LLM_HOST)",
-          "contextWindow": $LOCAL_LLM_CONTEXT_WINDOW,
+          "id": "macmini/qwen3-coder-next",
+          "name": "Qwen3-Coder-Next (Mac mini)",
+          "contextWindow": 32768,
+          "maxTokens": 8192
+        },
+        {
+          "id": "m4max/qwen3-coder-next",
+          "name": "Qwen3-Coder-Next (M4 Max)",
+          "contextWindow": 65536,
           "maxTokens": 8192
         }
       ]
@@ -45,4 +58,4 @@ cat > "$PI_CODING_AGENT_DIR/models.json" <<EOF
 EOF
 
 export PI_CODING_AGENT_DIR
-exec pi --model "local-llm/$LOCAL_LLM_MODEL" "$@"
+exec pi --provider local-llm "$@"

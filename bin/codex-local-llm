@@ -1,17 +1,23 @@
 #!/bin/bash
-# Runs `codex` pointed at the local model server on macbook-m4-max (over
-# Tailscale) instead of a real OpenAI account. Does not touch the normal
-# ~/.codex config — uses an isolated CODEX_HOME so a plain `codex` invocation
-# elsewhere is unaffected. See ../SPECIFICATION.md.
+# Runs `codex` against the local fleet router (over Tailscale). The router
+# provider is selected for this process, while Codex's normal model picker
+# remains in charge of model selection. See ../SPECIFICATION.md.
 #
-# Override defaults via env vars: LOCAL_LLM_HOST, LOCAL_LLM_PORT,
-# LOCAL_LLM_MODEL, LOCAL_LLM_CONTEXT_WINDOW, LOCAL_LLM_API_KEY (or
-# LOCAL_LLM_API_KEY_FILE).
+# Override router location/key with LOCAL_LLM_ROUTER_HOST,
+# LOCAL_LLM_ROUTER_PORT, LOCAL_LLM_ROUTER_API_KEY, or
+# LOCAL_LLM_ROUTER_API_KEY_FILE.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-CODEX_MODEL_CATALOG="$REPO_DIR/codex-metadata/model-catalog.json"
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE_PATH" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+  SOURCE_PATH="$(readlink "$SOURCE_PATH")"
+  case "$SOURCE_PATH" in
+    /*) ;;
+    *) SOURCE_PATH="$SOURCE_DIR/$SOURCE_PATH" ;;
+  esac
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
 # shellcheck source=bin/lib/local-llm-common.sh
 source "$SCRIPT_DIR/lib/local-llm-common.sh"
 
@@ -20,29 +26,11 @@ if ! command -v codex >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -f "$CODEX_MODEL_CATALOG" ]]; then
-  echo "error: Codex model catalog is missing: $CODEX_MODEL_CATALOG" >&2
-  exit 1
-fi
+local_llm_require_router_key
+local_llm_check_router_reachable
 
-local_llm_require_api_key
-local_llm_check_reachable
-
-CODEX_HOME="$LOCAL_LLM_CONFIG_DIR/codex-home"
-mkdir -p "$CODEX_HOME"
-
-cat > "$CODEX_HOME/config.toml" <<EOF
-model = "$LOCAL_LLM_MODEL"
-model_provider = "local-llm"
-model_context_window = $LOCAL_LLM_CONTEXT_WINDOW
-model_catalog_json = "$CODEX_MODEL_CATALOG"
-
-[model_providers.local-llm]
-name = "Local LLM ($LOCAL_LLM_HOST)"
-base_url = "$(local_llm_base_url)"
-env_key = "LOCAL_LLM_API_KEY"
-wire_api = "responses"
-EOF
-
-export CODEX_HOME
-exec codex "$@"
+# The normal ~/.codex config already contains the fleet provider and merged
+# catalog. This process-only override selects that provider without changing
+# the user's normal frontier-provider default or inventing model-selection
+# state. /model can therefore select any model exposed by the fleet.
+exec codex -c model_provider=local-llm-fleet "$@"

@@ -18,25 +18,16 @@ No download or setup process was left running outside the two intended
 
 ## Normal client use
 
-From this repo on `chads-macbook-pro`, the M4 Max is the default:
+From this repo on `chads-macbook-pro`, both wrappers use the fleet router:
 
 ```bash
 ./bin/codex-local-llm
 ./bin/pi-local-llm
 ```
 
-Select the Mac mini with one override. The wrapper automatically uses
-`~/.config/local-llm/api-key-macmini` and advertises its 32K context:
-
-```bash
-LOCAL_LLM_HOST=macmini ./bin/codex-local-llm
-LOCAL_LLM_HOST=macmini ./bin/pi-local-llm
-```
-
-The Codex wrapper loads `codex-metadata/model-catalog.json` into its isolated
-`~/.config/local-llm/codex-home/config.toml`. This prevents the
-`qwen3-coder-next` fallback-metadata warning without modifying the normal
-`~/.codex/config.toml`; use plain `codex` for the existing frontier setup.
+Codex starts with `model_provider=local-llm-fleet`, so `/model` can select
+either router-qualified model without changing the normal frontier setup. Pi
+exposes the same two models through its native model picker/cycling.
 
 Repeatable noninteractive checks:
 
@@ -44,10 +35,6 @@ Repeatable noninteractive checks:
 ./bin/codex-local-llm exec 'Reply with exactly the word: pong'
 ./bin/pi-local-llm --print 'Reply with exactly the word: pong'
 
-LOCAL_LLM_HOST=macmini \
-  ./bin/codex-local-llm exec 'Reply with exactly the word: pong'
-LOCAL_LLM_HOST=macmini \
-  ./bin/pi-local-llm --print 'Reply with exactly the word: pong'
 ```
 
 ## Current deployed server details
@@ -123,8 +110,7 @@ wrong. Confirm the per-host client key file rather than restarting the daemon.
   `bin/` wrappers.
 - Client secrets/state:
   `~/.config/local-llm/api-key`,
-  `~/.config/local-llm/api-key-macmini`,
-  `~/.config/local-llm/codex-home/`, and
+  `~/.config/local-llm/codex-router-key`, and
   `~/.config/local-llm/pi-home/`.
 - SSH aliases: `macbook-m4-max-homelab` and `macmini-homelab`.
 - Per-host runtime: `~/.homebrew/`, `~/models/`,

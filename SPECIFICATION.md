@@ -212,20 +212,12 @@ The supported entry points are:
 
 Both wrappers:
 
-- Default to `macbook-m4-max:8080` and model ID `qwen3-coder-next`.
-- Select the matching default API-key file and advertised context window for
-  the two known hosts.
-- Accept environment overrides without editing the scripts.
-- Probe `/v1/models` for readiness, then validate the bearer key with a
-  deliberately invalid `{}` request to protected `/v1/chat/completions`. A
-  correct key reaches payload validation (`400`) without running inference; a
-  wrong key is rejected (`401`).
-- Distinguish a key mismatch from an unreachable or unhealthy server and fail
-  clearly instead of allowing an opaque downstream connection error.
-- Generate isolated client configuration, then `exec` the real CLI with all
-  user arguments unchanged.
-- Do not mutate `~/.codex/config.toml`, `~/.pi/agent`, or the user's normal
-  frontier-provider configuration.
+- Use the Mac mini fleet router at `macmini:8081` and check its readiness
+  before starting the client.
+- Expose both router-qualified models to the client's native model picker.
+- Leave model selection and session state to Codex/Pi instead of forcing a
+  model in the wrapper.
+- Keep the normal frontier-provider default unchanged.
 
 ### Codex model metadata
 
@@ -237,31 +229,19 @@ the endpoint is reachable. The checked-in
 declares the stable `qwen3-coder-next` model ID with protocol-valid fields,
 including the deployed 65,536-token context and local coding-tool capabilities.
 
-`bin/codex-local-llm` writes an absolute `model_catalog_json` entry into its
-isolated `CODEX_HOME/config.toml`, so the warning is fixed without touching a
-normal Codex installation. A standalone installation can follow
-[`codex-metadata/AGENTS.md`](./codex-metadata/AGENTS.md); Codex loads this file
-only at startup, so restart after changing the path. The catalog intentionally
-contains no API keys, hostnames, or other secrets.
-
-Known-host defaults are:
-
-| `LOCAL_LLM_HOST` | `LOCAL_LLM_API_KEY_FILE` default | `LOCAL_LLM_CONTEXT_WINDOW` default |
-|---|---|---:|
-| `macbook-m4-max` or any other host | `~/.config/local-llm/api-key` | 65,536 |
-| `macmini`, its FQDN, or `100.99.172.34` | `~/.config/local-llm/api-key-macmini` | 32,768 |
+The normal Codex installation supplies the merged model catalog and fleet
+provider. The wrapper selects that provider only for its process, so the
+normal frontier-provider default remains unchanged.
 
 Supported overrides:
 
 | Variable | Purpose |
 |---|---|
-| `LOCAL_LLM_HOST` | Tailscale hostname or IP |
-| `LOCAL_LLM_PORT` | llama-server port |
-| `LOCAL_LLM_MODEL` | stable API model ID |
-| `LOCAL_LLM_CONTEXT_WINDOW` | context size advertised to Codex and Pi; must match server capacity |
-| `LOCAL_LLM_API_KEY` | bearer key supplied directly; takes precedence over a file |
-| `LOCAL_LLM_API_KEY_FILE` | file containing the selected host's bearer key |
-| `LOCAL_LLM_CONFIG_DIR` | parent of the generated isolated Codex/Pi state directories |
+| `LOCAL_LLM_ROUTER_HOST` | Tailscale hostname of the fleet router; defaults to `macmini` |
+| `LOCAL_LLM_ROUTER_PORT` | Fleet router port; defaults to `8081` |
+| `LOCAL_LLM_ROUTER_API_KEY` | Router bearer key supplied directly |
+| `LOCAL_LLM_ROUTER_API_KEY_FILE` | File containing the router bearer key |
+| `LOCAL_LLM_CONFIG_DIR` | Parent of the generated isolated Pi state directory |
 
 ### Client key installation
 
@@ -281,19 +261,12 @@ chmod 600 ~/.config/local-llm/api-key \
 
 ### Normal use
 
-The M4 Max is the default, so it needs no host override:
+Both wrappers use the fleet router and expose both local models to the native
+client picker:
 
 ```bash
 ./bin/codex-local-llm
 ./bin/pi-local-llm
-```
-
-Select the Mac mini with one environment variable; its key file and 32K client
-context are selected automatically:
-
-```bash
-LOCAL_LLM_HOST=macmini ./bin/codex-local-llm
-LOCAL_LLM_HOST=macmini ./bin/pi-local-llm
 ```
 
 Noninteractive examples:
@@ -302,38 +275,26 @@ Noninteractive examples:
 ./bin/codex-local-llm exec 'Explain the current repository'
 ./bin/pi-local-llm --print 'Explain the current repository'
 
-LOCAL_LLM_HOST=macmini \
-  ./bin/codex-local-llm exec 'Run the relevant tests'
-LOCAL_LLM_HOST=macmini \
-  ./bin/pi-local-llm --print 'Inspect this repository'
+./bin/codex-local-llm exec 'Run the relevant tests'
+./bin/pi-local-llm --print 'Inspect this repository'
 ```
 
 ## 7. Codex-specific configuration
 
-`bin/codex-local-llm` regenerates
-`~/.config/local-llm/codex-home/config.toml` on every run and exports that
-directory as `CODEX_HOME`. `CODEX_HOME` relocates Codex configuration and state,
-so the normal `~/.codex` setup remains untouched.
+`bin/codex-local-llm` selects the already-configured fleet provider with the
+process-only equivalent of:
 
-The generated configuration selects a custom provider with:
+```bash
+codex -c model_provider=local-llm-fleet
+```
 
-- `base_url = "http://<host>:8080/v1"`
-- `env_key = "LOCAL_LLM_API_KEY"`
-- `wire_api = "responses"`
-- `model_context_window` matching the selected server
+This leaves Codex's normal model catalog, `/model` picker, and session model
+state in charge. It does not change the normal `~/.codex/config.toml`.
 
 Current Codex supports only `wire_api = "responses"` for a custom provider.
 `wire_api = "chat"` is removed in the installed CLI, not merely deprecated;
 the binary emits `wire_api = "chat" is no longer supported.` This is why the
 server's `/v1/responses` endpoint is a hard requirement.
-
-The wrapper also sets `model_catalog_json` to the checked-in
-`codex-metadata/model-catalog.json`. This supplies protocol-valid metadata for
-`qwen3-coder-next`, including the context window and tool capabilities, so the
-fallback-metadata warning is not emitted. This setting exists only in the
-wrapper's isolated `CODEX_HOME`; the normal `~/.codex/config.toml` is not
-changed and ordinary `codex` launches continue using their existing model and
-provider settings.
 
 The wrapper deliberately does not set `approval_policy` or `sandbox_mode`.
 Interactive Codex therefore retains its own current safety defaults. In final
@@ -464,16 +425,18 @@ the catalog or profile.
 
 `bin/pi-local-llm` regenerates
 `~/.config/local-llm/pi-home/models.json`, exports that directory as
-`PI_CODING_AGENT_DIR`, and starts:
+`PI_CODING_AGENT_DIR`, and starts Pi with the local provider selected:
 
 ```text
-pi --model local-llm/qwen3-coder-next <all original arguments>
+pi --provider local-llm <all original arguments>
 ```
 
-The generated model uses Pi's native `openai-completions` provider against
-`/v1/chat/completions`, references `$LOCAL_LLM_API_KEY` instead of writing the
-secret into JSON, advertises the selected host's real context window, and caps
-individual model output at 8,192 tokens.
+The generated provider exposes both `macmini/qwen3-coder-next` and
+`m4max/qwen3-coder-next`, uses Pi's native `openai-completions` provider against
+the fleet router's `/v1/chat/completions`, references
+`$LOCAL_LLM_ROUTER_API_KEY` instead of writing the secret into JSON, and caps
+individual model output at 8,192 tokens. Pi's normal model picker/cycling and
+session state remain in charge.
 
 ## 9. Final verification evidence
 
@@ -489,9 +452,7 @@ On 2026-08-07, from `chads-macbook-pro`:
 - `codex --profile local-llm --ask-for-approval never --sandbox read-only exec`
   returned `pong` through the Mac mini router.
 - A direct Mac mini `/v1/responses` request returned `pong`.
-- Codex and Pi returned `pong` through the default M4 Max wrapper path.
-- Codex and Pi returned `pong` through `LOCAL_LLM_HOST=macmini` using automatic
-  Mini key/context selection.
+- Codex and Pi returned `pong` through the fleet router using the router key.
 - Codex and Pi each successfully used their shell tool to run
   `git rev-parse --short HEAD` and returned the then-current repository commit,
   proving an agent tool loop rather than text completion alone.
@@ -501,11 +462,6 @@ Useful repeatable smoke tests:
 ```bash
 ./bin/codex-local-llm exec 'Reply with exactly the word: pong'
 ./bin/pi-local-llm --print 'Reply with exactly the word: pong'
-
-LOCAL_LLM_HOST=macmini \
-  ./bin/codex-local-llm exec 'Reply with exactly the word: pong'
-LOCAL_LLM_HOST=macmini \
-  ./bin/pi-local-llm --print 'Reply with exactly the word: pong'
 ```
 
 ## 10. Resource and safety constraints
@@ -539,5 +495,5 @@ Operational gotchas already encountered:
 - CI runner setup on either `homelab` user.
 - Automatic model updates, quant switching, or failover between hosts.
 - MLX-based serving.
-- Load balancing across the two hosts. Host selection is explicit through
-  `LOCAL_LLM_HOST`.
+- Automatic load balancing across the two hosts. Model selection remains
+  explicit through each client's native model picker.
