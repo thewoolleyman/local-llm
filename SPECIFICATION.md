@@ -465,7 +465,17 @@ Override the initial models with `CLAUDE_LOCAL_MODEL` and
 The wrapper unsets `ANTHROPIC_API_KEY`, Bedrock, and Vertex routing variables so
 a normal Claude.ai or cloud-provider credential cannot bypass the local router.
 It also defaults `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` while using the
-local endpoint. Live Claude tool-loop verification is pending until the model
+local endpoint. Print-mode invocations automatically use
+`--strict-mcp-config --mcp-config '{"mcpServers":{}}'`, preventing the user's
+normal MCP configuration from starting Honeycomb/1Password/Keychain helpers
+during short smoke tests. Set `CLAUDE_LOCAL_LLM_DISABLE_MCP=0` only when a
+print-mode session intentionally needs the normal MCP configuration. Interactive
+invocations retain the normal user/project MCP configuration.
+
+Do not pipe a normal MCP-enabled Claude process into `head`: if the consumer
+exits early, MCP descendants can be orphaned and a Keychain helper can leave a
+macOS security dialog open. For smoke tests use print mode, which is isolated by
+the wrapper. Live Claude tool-loop verification is pending until the model
 servers are stable.
 
 ## 9. Pi-specific configuration

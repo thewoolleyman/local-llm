@@ -57,4 +57,24 @@ unset ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL
 unset CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-1}"
 
+# `claude -p` still loads the user's normal MCP configuration. That is unsafe
+# for short smoke tests: this machine's Honeycomb MCP starts 1Password and
+# `/usr/bin/security`, and a pipe such as `... | head` can orphan those
+# descendants while a Keychain dialog is open. Keep MCP available for normal
+# interactive sessions, but make print-mode local tests use an explicit empty
+# MCP configuration. Set CLAUDE_LOCAL_LLM_DISABLE_MCP=0 to opt out.
+disable_mcp="${CLAUDE_LOCAL_LLM_DISABLE_MCP:-}"
+if [ -z "$disable_mcp" ]; then
+	for arg in "$@"; do
+		if [ "$arg" = "-p" ] || [ "$arg" = "--print" ]; then
+			disable_mcp=1
+			break
+		fi
+	done
+fi
+
+if [ "$disable_mcp" = "1" ]; then
+	exec claude --strict-mcp-config --mcp-config '{"mcpServers":{}}' "$@"
+fi
+
 exec claude "$@"
