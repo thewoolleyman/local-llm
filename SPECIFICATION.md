@@ -447,9 +447,18 @@ ANTHROPIC_SMALL_FAST_MODEL=macmini/qwen3-coder-next
 ```
 
 The base URL intentionally omits `/v1`; Claude Code appends `/v1/messages`.
+This is different from the shared OpenAI-compatible helper used by Codex and
+Pi, which returns a `/v1` base. The Claude wrapper must not reuse that full
+URL or requests become `/v1/v1/messages` and fail with HTTP 404.
 The router exposes the Anthropic Messages endpoint natively, so no translation
-proxy is required. Claude Code's `/model` picker and session state remain in
-charge after startup; either router-qualified model can be selected there.
+proxy is required. Claude Code's session model remains in charge after
+startup. The wrapper's initial local model is selectable with
+`CLAUDE_LOCAL_MODEL` or `--model`; Claude Code's native picker may show the
+router models after gateway discovery is enabled. The wrapper also maps the
+built-in `opus`, `sonnet`, and `haiku` aliases to the selected local model, so
+choosing one cannot send a cloud model name to the local router. To choose a
+specific peer, use `--model macmini/qwen3-coder-next` or
+`--model m4max/qwen3-coder-next` when starting a new session.
 Override the initial models with `CLAUDE_LOCAL_MODEL` and
 `CLAUDE_LOCAL_SMALL_FAST_MODEL` when needed.
 

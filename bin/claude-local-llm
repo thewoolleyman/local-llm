@@ -33,10 +33,22 @@ fi
 local_llm_require_router_key
 local_llm_check_router_reachable
 
-export ANTHROPIC_BASE_URL="$(local_llm_router_base_url)"
+# Claude Code appends /v1/messages itself. The shared helper returns the
+# OpenAI-compatible /v1 base used by Codex and Pi, so remove that suffix here
+# rather than making Claude request /v1/v1/messages.
+export ANTHROPIC_BASE_URL="http://${LOCAL_LLM_ROUTER_HOST}:${LOCAL_LLM_ROUTER_PORT}"
 export ANTHROPIC_AUTH_TOKEN="$LOCAL_LLM_ROUTER_API_KEY"
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$CLAUDE_LOCAL_MODEL}"
 export ANTHROPIC_SMALL_FAST_MODEL="${ANTHROPIC_SMALL_FAST_MODEL:-$CLAUDE_LOCAL_SMALL_FAST_MODEL}"
+# Claude Code's built-in aliases otherwise name cloud Anthropic models. Map
+# them to the selected local model so choosing opus/sonnet/haiku in /model
+# cannot accidentally ask the local router for a nonexistent cloud model.
+export ANTHROPIC_DEFAULT_OPUS_MODEL="${ANTHROPIC_DEFAULT_OPUS_MODEL:-$CLAUDE_LOCAL_MODEL}"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="${ANTHROPIC_DEFAULT_SONNET_MODEL:-$CLAUDE_LOCAL_MODEL}"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-$CLAUDE_LOCAL_SMALL_FAST_MODEL}"
+# Claude Code 2.1.129+ requires this opt-in before it discovers gateway
+# models from /v1/models for the native /model picker.
+export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY="${CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY:-1}"
 
 # Do not let a normal Claude.ai/API or cloud-provider credential route this
 # process away from the local router. Keep nonessential network traffic local.
