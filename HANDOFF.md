@@ -26,6 +26,11 @@ From this repo on `chads-macbook-pro`, the client wrappers use the fleet router:
 ./bin/pi-local-llm
 ```
 
+`./bin/claude-local-llm` uses Claude Code's `--bare` startup plus an
+`apiKeyHelper` to avoid login-Keychain credential prompts, and then explicitly
+loads the user's MCP config so interactive local Claude sessions still have MCP.
+This is deliberate: do not remove MCP as a workaround for keychain prompts.
+
 Codex starts with `model_provider=local-llm-fleet`, so `/model` can select
 either router-qualified model without changing the normal frontier setup. Pi
 exposes the same two models through its native model picker/cycling.

@@ -1,0 +1,21 @@
+#!/bin/bash
+# Prints the local fleet router key for Claude Code's apiKeyHelper setting.
+# This intentionally reads the repo's local key file path and never consults
+# Claude Code's OAuth/keychain credential store.
+set -euo pipefail
+
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE_PATH" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+  SOURCE_PATH="$(readlink "$SOURCE_PATH")"
+  case "$SOURCE_PATH" in
+    /*) ;;
+    *) SOURCE_PATH="$SOURCE_DIR/$SOURCE_PATH" ;;
+  esac
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+# shellcheck source=bin/lib/local-llm-common.sh
+source "$SCRIPT_DIR/lib/local-llm-common.sh"
+
+local_llm_require_router_key
+printf '%s' "$LOCAL_LLM_ROUTER_API_KEY"

@@ -223,7 +223,10 @@ All wrappers:
 
 `bin/claude-local-llm` additionally selects Claude Code's Anthropic Messages
 transport against the fleet router, sets a valid local initial model, and
-clears competing Anthropic, Bedrock, and Vertex credentials for that process.
+clears competing Anthropic, Bedrock, and Vertex credentials for that process. It
+starts Claude Code with `--bare` and an `apiKeyHelper` so the local wrapper never
+reads Claude Code's login-Keychain OAuth credentials, then explicitly passes the
+user MCP config back with `--mcp-config`.
 
 ### Codex model metadata
 
@@ -470,12 +473,17 @@ Override the initial models with `CLAUDE_LOCAL_MODEL` and
 The wrapper unsets `ANTHROPIC_API_KEY`, Bedrock, and Vertex routing variables so
 a normal Claude.ai or cloud-provider credential cannot bypass the local router.
 It also defaults `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` while using the
-local endpoint. Print-mode invocations automatically use
-`--strict-mcp-config --mcp-config '{"mcpServers":{}}'`, preventing the user's
-normal MCP configuration from starting Honeycomb/1Password/Keychain helpers
-during short smoke tests. Set `CLAUDE_LOCAL_LLM_DISABLE_MCP=0` only when a
-print-mode session intentionally needs the normal MCP configuration. Interactive
-invocations retain the normal user/project MCP configuration.
+local endpoint. Interactive invocations use Claude Code's `--bare` mode to skip
+normal keychain reads, but MCP remains enabled by explicitly loading
+`~/.claude.json` with `--mcp-config`. Auth in bare mode comes from
+`bin/claude-local-llm-api-key-helper`, which reads the local router key file and
+prints it for Claude Code's `apiKeyHelper` setting.
+
+Print-mode invocations automatically use
+`--strict-mcp-config --mcp-config '{"mcpServers":{}}'`, preventing short smoke
+tests from starting long-lived MCP descendants. Set
+`CLAUDE_LOCAL_LLM_DISABLE_MCP=0` only when a print-mode session intentionally
+needs the normal MCP configuration.
 
 Do not pipe a normal MCP-enabled Claude process into `head`: if the consumer
 exits early, MCP descendants can be orphaned and a Keychain helper can leave a
