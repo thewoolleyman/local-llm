@@ -29,6 +29,9 @@ fi
 
 : "${CLAUDE_LOCAL_MODEL:=macmini/qwen3-coder-next}"
 : "${CLAUDE_LOCAL_SMALL_FAST_MODEL:=$CLAUDE_LOCAL_MODEL}"
+: "${CLAUDE_LOCAL_M4MAX_MODEL:=m4max/qwen3-coder-next}"
+: "${CLAUDE_LOCAL_M4MAX_MODEL_NAME:=Local LLM (m4max/qwen3-coder-next)}"
+: "${CLAUDE_LOCAL_M4MAX_MODEL_DESCRIPTION:=Local model via macmini fleet router (M4 Max)}"
 
 local_llm_require_router_key
 local_llm_check_router_reachable
@@ -40,6 +43,12 @@ export ANTHROPIC_BASE_URL="http://${LOCAL_LLM_ROUTER_HOST}:${LOCAL_LLM_ROUTER_PO
 export ANTHROPIC_AUTH_TOKEN="$LOCAL_LLM_ROUTER_API_KEY"
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$CLAUDE_LOCAL_MODEL}"
 export ANTHROPIC_SMALL_FAST_MODEL="${ANTHROPIC_SMALL_FAST_MODEL:-$CLAUDE_LOCAL_SMALL_FAST_MODEL}"
+# Claude Code permits one explicit custom picker entry, while gateway
+# discovery may omit non-Claude IDs. Pin the second peer to a built-in
+# family slot so both router-qualified models are visible in /model.
+export ANTHROPIC_DEFAULT_OPUS_MODEL="${ANTHROPIC_DEFAULT_OPUS_MODEL:-$CLAUDE_LOCAL_M4MAX_MODEL}"
+export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME="${ANTHROPIC_DEFAULT_OPUS_MODEL_NAME:-$CLAUDE_LOCAL_M4MAX_MODEL_NAME}"
+export ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION="${ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION:-$CLAUDE_LOCAL_M4MAX_MODEL_DESCRIPTION}"
 # Claude Code 2.1.129+ requires this opt-in before it discovers gateway
 # models from /v1/models for the native /model picker.
 export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY="${CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY:-1}"
@@ -51,8 +60,8 @@ export CLAUDE_CODE_DISABLE_1M_CONTEXT="${CLAUDE_CODE_DISABLE_1M_CONTEXT:-1}"
 # fallback assumption is larger than the llama.cpp mini context. Declare the
 # actual server limit so the request budget is never 51,200 tokens.
 export CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-32768}"
-# Keep one explicit custom entry for clients where gateway discovery is absent
-# or filtered; do not manufacture one entry per Anthropic alias.
+# Keep the Mac mini as the one explicit custom entry. The M4 Max is pinned
+# to the Opus slot above because Claude Code permits only one custom entry.
 export ANTHROPIC_CUSTOM_MODEL_OPTION="${ANTHROPIC_CUSTOM_MODEL_OPTION:-$CLAUDE_LOCAL_MODEL}"
 export ANTHROPIC_CUSTOM_MODEL_OPTION_NAME="${ANTHROPIC_CUSTOM_MODEL_OPTION_NAME:-Local LLM ($CLAUDE_LOCAL_MODEL)}"
 export ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION="${ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION:-Local model via macmini fleet router}"
