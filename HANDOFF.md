@@ -18,9 +18,10 @@ No download or setup process was left running outside the two intended
 
 ## Normal client use
 
-From this repo on `chads-macbook-pro`, both wrappers use the fleet router:
+From this repo on `chads-macbook-pro`, the client wrappers use the fleet router:
 
 ```bash
+./bin/claude-local-llm
 ./bin/codex-local-llm
 ./bin/pi-local-llm
 ```
@@ -29,12 +30,22 @@ Codex starts with `model_provider=local-llm-fleet`, so `/model` can select
 either router-qualified model without changing the normal frontier setup. Pi
 exposes the same two models through its native model picker/cycling.
 
+The watchdog plan is [tmp/watchdog-plan.md](./tmp/watchdog-plan.md). The
+current one-shot observer/recovery command is:
+
+```bash
+./bin/local-llm-watchdog --host macmini --recover --interval 10 --samples 3
+```
+
+It samples slot progress and probes inference before restarting a host. The
+recurring watchdog LaunchDaemon on both hosts is not yet deployed.
+
 Repeatable noninteractive checks:
 
 ```bash
+./bin/claude-local-llm -p --max-turns 1 'Reply with exactly: pong'
 ./bin/codex-local-llm exec 'Reply with exactly the word: pong'
 ./bin/pi-local-llm --print 'Reply with exactly the word: pong'
-
 ```
 
 ## Current deployed server details
@@ -121,5 +132,6 @@ wrong. Confirm the per-host client key file rather than restarting the daemon.
 
 ## Remaining work
 
-None for the requested scope. Future CI runners, automatic failover, model
+Claude live tool-loop verification and recurring watchdog LaunchDaemon
+deployment remain pending. Future CI runners, automatic failover, model
 updates, and MLX serving remain explicitly out of scope.

@@ -71,11 +71,11 @@ rather than assuming local shell access on either host.
 
 ## Client/provider workflow
 
-The supported local-model path is the repository's `bin/codex-local-llm`
-wrapper or the standalone Codex `local-llm` profile documented in
-`SPECIFICATION.md` §7. Read that section before changing Codex configuration;
-it explains the router URL, bearer-key placement, model catalog, and the
-distinction between the normal OpenAI provider and the local fleet provider.
+The supported local-model paths are the repository's
+`bin/claude-local-llm`, `bin/codex-local-llm`, and `bin/pi-local-llm` wrappers,
+or the standalone Codex `local-llm` profile documented in `SPECIFICATION.md`.
+Read the relevant client section before changing configuration; it explains
+the router URL, bearer-key placement, model selection, and provider routing.
 
 `model_provider` is selected when a Codex process starts. A per-invocation
 override such as `-c model_provider=local-llm-fleet` does not define a provider

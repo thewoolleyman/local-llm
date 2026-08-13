@@ -206,11 +206,13 @@ while its model loads.
 
 The supported entry points are:
 
+- `bin/claude-local-llm`
 - `bin/codex-local-llm`
 - `bin/pi-local-llm`
+- `bin/local-llm-watchdog`
 - shared logic in `bin/lib/local-llm-common.sh`
 
-Both wrappers:
+All wrappers:
 
 - Use the Mac mini fleet router at `macmini:8081` and check its readiness
   before starting the client.
@@ -218,6 +220,10 @@ Both wrappers:
 - Leave model selection and session state to Codex/Pi instead of forcing a
   model in the wrapper.
 - Keep the normal frontier-provider default unchanged.
+
+`bin/claude-local-llm` additionally selects Claude Code's Anthropic Messages
+transport against the fleet router, sets a valid local initial model, and
+clears competing Anthropic, Bedrock, and Vertex credentials for that process.
 
 ### Codex model metadata
 
@@ -265,6 +271,7 @@ Both wrappers use the fleet router and expose both local models to the native
 client picker:
 
 ```bash
+./bin/claude-local-llm
 ./bin/codex-local-llm
 ./bin/pi-local-llm
 ```
@@ -272,12 +279,18 @@ client picker:
 Noninteractive examples:
 
 ```bash
+./bin/claude-local-llm -p 'Explain the current repository'
 ./bin/codex-local-llm exec 'Explain the current repository'
 ./bin/pi-local-llm --print 'Explain the current repository'
 
+./bin/claude-local-llm -p 'Run the relevant tests'
 ./bin/codex-local-llm exec 'Run the relevant tests'
 ./bin/pi-local-llm --print 'Inspect this repository'
 ```
+
+The wrappers are also installed on this Mac as symlinks under
+`/usr/local/bin/claude-local-llm`, `/usr/local/bin/codex-local-llm`, and
+`/usr/local/bin/pi-local-llm`.
 
 ## 7. Codex-specific configuration
 
@@ -421,7 +434,32 @@ The checked-in router catalog is
 Codex loads model catalogs at startup, so restart the session after changing
 the catalog or profile.
 
-## 8. Pi-specific configuration
+## 8. Claude Code-specific configuration
+
+`bin/claude-local-llm` starts Claude Code against the fleet router by setting,
+for that process only:
+
+```text
+ANTHROPIC_BASE_URL=http://macmini:8081
+ANTHROPIC_AUTH_TOKEN=<contents of ~/.config/local-llm/codex-router-key>
+ANTHROPIC_MODEL=macmini/qwen3-coder-next
+ANTHROPIC_SMALL_FAST_MODEL=macmini/qwen3-coder-next
+```
+
+The base URL intentionally omits `/v1`; Claude Code appends `/v1/messages`.
+The router exposes the Anthropic Messages endpoint natively, so no translation
+proxy is required. Claude Code's `/model` picker and session state remain in
+charge after startup; either router-qualified model can be selected there.
+Override the initial models with `CLAUDE_LOCAL_MODEL` and
+`CLAUDE_LOCAL_SMALL_FAST_MODEL` when needed.
+
+The wrapper unsets `ANTHROPIC_API_KEY`, Bedrock, and Vertex routing variables so
+a normal Claude.ai or cloud-provider credential cannot bypass the local router.
+It also defaults `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` while using the
+local endpoint. Live Claude tool-loop verification is pending until the model
+servers are stable.
+
+## 9. Pi-specific configuration
 
 `bin/pi-local-llm` regenerates
 `~/.config/local-llm/pi-home/models.json`, exports that directory as
@@ -438,7 +476,80 @@ the fleet router's `/v1/chat/completions`, references
 individual model output at 8,192 tokens. Pi's normal model picker/cycling and
 session state remain in charge.
 
-## 9. Final verification evidence
+## 10. Watchdog design and current implementation
+
+The full watchdog plan is tracked in
+[`tmp/watchdog-plan.md`](./tmp/watchdog-plan.md). It is a planned design for
+deployment on both `macbook-m4-max` and `macmini`; the recurring root-owned
+LaunchDaemon deployment is not yet installed.
+
+The runnable first implementation is `bin/local-llm-watchdog`. It runs from
+the client over SSH and supports:
+
+```bash
+./bin/local-llm-watchdog --host macbook-m4-max --once
+./bin/local-llm-watchdog --host macmini --recover --interval 10 --samples 3
+```
+
+It reads authenticated `/slots` snapshots, compares
+`n_prompt_tokens_processed` and nested decoded-token counters between samples,
+and runs a one-token authenticated probe. Active counter motion is `busy`; a
+restart is only proposed or performed after repeated no-progress samples plus
+a failed probe. `--recover` kickstarts only the selected host's
+`local.homelab.llama-server`; without it, the script is observation/dry-run.
+It does not restart a peer merely because its slots are full.
+
+Dogfooding on 2026-08-12 showed:
+
+- `macbook-m4-max`: no active slots; probe passed; no restart.
+- `macmini`: prompt counters advanced and the active slot cleared; probe
+  passed; classified as busy/degraded; no restart.
+
+This validates the busy-vs-stuck guard against the current failure mode, where
+the process can be running while requests are slow or KV capacity is under
+pressure. Remaining work is the plan's dry-run deployment, peer drain,
+root-owned LaunchDaemon installation on both hosts, circuit breaking, and
+controlled failure testing.
+
+### Planned watchdog contract for both hosts
+
+The eventual deployment is one root-owned
+`/Library/LaunchDaemons/local.homelab.llama-watchdog.plist` per host. The
+existing `local.homelab.llama-server` LaunchDaemon remains the process
+supervisor; the watchdog handles live-but-unhealthy inference. The host targets
+are `macbook-m4-max:8080` with four auto-selected 65,536-token slots and
+`macmini:8080` with two 32,768-token slots. The Mac mini's
+`local.homelab.llama-swap` router is monitored separately and must not be
+restarted merely because one model peer is unhealthy.
+
+The planned state machine is `ready`, `busy`, `degraded`, `stuck`,
+`recovering`, and `failed`. `busy` means active slot counters continue moving;
+full slots alone are not failure. `stuck` requires an adaptive request-age
+budget to be exceeded, no prompt/decode progress for the no-progress window,
+an unsuccessful authenticated one-token probe or repeated KV/context/5xx
+errors, and the condition recurring for the consecutive sample count. Initial
+defaults are a 10-second sample, 60-second no-progress window, three failed
+observations, and exponential backoff; these remain configurable until
+production timings validate them.
+
+The probe ladder is process/LaunchDaemon state, `/v1/models` readiness,
+authenticated one-token generation, then slot/progress and log inspection.
+Probes are rate-limited and use the actual host bearer key without logging it.
+For confirmed `stuck`, the planned recovery is: drain the peer in llama-swap,
+record redacted evidence, cancel/clear work through a supported endpoint when
+available, kickstart only that host's `llama-server`, wait for `/v1/models` and
+the generation probe, then re-enable the peer. Router recovery is independent.
+Repeated failures trip a circuit breaker and leave the peer drained rather than
+looping restarts.
+
+The watchdog must never restart solely because a request is long or slots are
+occupied; must serialize recovery, use backoff, preserve rotated logs, retain
+Tailscale-only binding and secret isolation, and avoid `cwoolley`'s files or
+processes. Acceptance requires proving that progressing long prompts remain
+busy, wedged servers recover, healthy peers are not restarted, router failures
+recover independently, and boot/reboot starts protection on both hosts.
+
+## 11. Final verification evidence
 
 On 2026-08-07, from `chads-macbook-pro`:
 
@@ -464,7 +575,7 @@ Useful repeatable smoke tests:
 ./bin/pi-local-llm --print 'Reply with exactly the word: pong'
 ```
 
-## 10. Resource and safety constraints
+## 12. Resource and safety constraints
 
 Apple Silicon uses unified memory. Fast User Switching does not release the
 resident memory held by `cwoolley`'s desktop session. Steady-state inference is
@@ -490,7 +601,7 @@ Operational gotchas already encountered:
   This deployment is unaffected because both wrappers and daemons explicitly
   set port `8080`.
 
-## 11. Out of scope
+## 13. Out of scope
 
 - CI runner setup on either `homelab` user.
 - Automatic model updates, quant switching, or failover between hosts.

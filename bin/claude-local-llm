@@ -1,0 +1,48 @@
+#!/bin/bash
+# Runs Claude Code against the local fleet router (over Tailscale). The
+# Anthropic Messages transport is provided natively by llama.cpp/llama-swap;
+# Claude Code's normal agent loop, tools, MCP, and model picker remain in use.
+#
+# Override router location/key with LOCAL_LLM_ROUTER_HOST,
+# LOCAL_LLM_ROUTER_PORT, LOCAL_LLM_ROUTER_API_KEY, or
+# LOCAL_LLM_ROUTER_API_KEY_FILE. Override the initial local model with
+# CLAUDE_LOCAL_MODEL or CLAUDE_LOCAL_SMALL_FAST_MODEL.
+set -euo pipefail
+
+SOURCE_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE_PATH" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+  SOURCE_PATH="$(readlink "$SOURCE_PATH")"
+  case "$SOURCE_PATH" in
+    /*) ;;
+    *) SOURCE_PATH="$SOURCE_DIR/$SOURCE_PATH" ;;
+  esac
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+# shellcheck source=bin/lib/local-llm-common.sh
+source "$SCRIPT_DIR/lib/local-llm-common.sh"
+
+if ! command -v claude >/dev/null 2>&1; then
+  echo "error: claude is not installed / not on PATH" >&2
+  exit 1
+fi
+
+: "${CLAUDE_LOCAL_MODEL:=macmini/qwen3-coder-next}"
+: "${CLAUDE_LOCAL_SMALL_FAST_MODEL:=$CLAUDE_LOCAL_MODEL}"
+
+local_llm_require_router_key
+local_llm_check_router_reachable
+
+export ANTHROPIC_BASE_URL="$(local_llm_router_base_url)"
+export ANTHROPIC_AUTH_TOKEN="$LOCAL_LLM_ROUTER_API_KEY"
+export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$CLAUDE_LOCAL_MODEL}"
+export ANTHROPIC_SMALL_FAST_MODEL="${ANTHROPIC_SMALL_FAST_MODEL:-$CLAUDE_LOCAL_SMALL_FAST_MODEL}"
+
+# Do not let a normal Claude.ai/API or cloud-provider credential route this
+# process away from the local router. Keep nonessential network traffic local.
+unset ANTHROPIC_API_KEY
+unset ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL
+unset CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-1}"
+
+exec claude "$@"

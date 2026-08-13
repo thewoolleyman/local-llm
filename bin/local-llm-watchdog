@@ -1,0 +1,87 @@
+#!/bin/bash
+# Observe or recover one local-LLM host. This first implementation is safe to
+# run from the client over SSH; deployment as a LaunchDaemon on both hosts is
+# specified in tmp/watchdog-plan.md and SPECIFICATION.md.
+set -euo pipefail
+
+usage() {
+  echo "usage: $0 --host macmini|macbook-m4-max [--once|--recover] [--interval seconds] [--samples count]" >&2
+  exit 2
+}
+
+mode=once
+host=
+interval=10
+samples=3
+while (($#)); do
+  case "$1" in
+    --host) host="${2:-}"; shift 2 ;;
+    --once) mode=once; shift ;;
+    --recover) mode=recover; shift ;;
+    --interval) interval="${2:-}"; shift 2 ;;
+    --samples) samples="${2:-}"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+case "$host" in
+  macmini) key_file="$HOME/.config/local-llm/api-key-macmini" ;;
+  macbook-m4-max) key_file="$HOME/.config/local-llm/api-key" ;;
+  *) usage ;;
+esac
+
+[[ "$interval" =~ ^[0-9]+$ && "$samples" =~ ^[1-9][0-9]*$ ]] || usage
+[[ -r "$key_file" ]] || { echo "error: missing key file: $key_file" >&2; exit 1; }
+key="$(<"$key_file")"
+base_url="http://${host}:8080"
+
+get_slots() {
+  curl -fsS --max-time 10 -H "Authorization: Bearer $key" "$base_url/slots"
+}
+
+probe() {
+  local model
+  model="$(curl -fsS --max-time 10 -H "Authorization: Bearer $key" "$base_url/v1/models" | jq -r '.data[0].id')"
+  curl -fsS --max-time 20 \
+    -H "Authorization: Bearer $key" -H 'Content-Type: application/json' \
+    -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly pong\"}],\"max_tokens\":1,\"stream\":false}" \
+    "$base_url/v1/chat/completions" >/dev/null
+}
+
+snapshot() {
+  get_slots | jq -c '[.[] | select(.is_processing == true) | {
+    id,
+    n_prompt_tokens_processed,
+    n_decoded: (.next_token[0].n_decoded // 0)
+  }]'
+}
+
+before="$(snapshot)"
+echo "host=$host active_slots=$(jq 'length' <<<"$before") snapshot=$before"
+if [[ "$mode" == once ]]; then
+  exit 0
+fi
+
+for ((i=1; i<=samples; i++)); do
+  sleep "$interval"
+  after="$(snapshot)"
+  if [[ "$after" != "$before" ]]; then
+    echo "progress sample=$i snapshot=$after state=busy"
+    before="$after"
+    continue
+  fi
+  echo "no-progress sample=$i snapshot=$after"
+done
+
+if probe >/dev/null 2>&1; then
+  echo "state=degraded probe=passed action=none"
+  exit 0
+fi
+
+echo "state=stuck action=restart host=$host" >&2
+if [[ "$mode" == recover ]]; then
+  ssh "$host" "sudo launchctl kickstart -k system/local.homelab.llama-server"
+  echo "restart=requested host=$host"
+else
+  echo "dry-run: rerun with --recover to restart the affected LaunchDaemon" >&2
+fi
