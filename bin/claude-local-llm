@@ -47,6 +47,10 @@ export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY="${CLAUDE_CODE_ENABLE_GATEWAY_
 # context. Disable Claude Code's extended-context request mode or it will send
 # a 51,200-token request to the mini and llama.cpp will reject it.
 export CLAUDE_CODE_DISABLE_1M_CONTEXT="${CLAUDE_CODE_DISABLE_1M_CONTEXT:-1}"
+# The gateway model ID is intentionally unrecognized by Claude Code, whose
+# fallback assumption is larger than the llama.cpp mini context. Declare the
+# actual server limit so the request budget is never 51,200 tokens.
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-32768}"
 # Keep one explicit custom entry for clients where gateway discovery is absent
 # or filtered; do not manufacture one entry per Anthropic alias.
 export ANTHROPIC_CUSTOM_MODEL_OPTION="${ANTHROPIC_CUSTOM_MODEL_OPTION:-$CLAUDE_LOCAL_MODEL}"

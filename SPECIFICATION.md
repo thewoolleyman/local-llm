@@ -461,7 +461,9 @@ and leaves the aliases semantically ambiguous. To choose a specific peer, use
 `--model macmini/qwen3-coder-next` or `--model m4max/qwen3-coder-next` when
 starting a new session. The wrapper also sets
 `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`; the mini has a 32,768-token context and
-cannot accept Claude Code's 51,200-token extended-context request.
+cannot accept Claude Code's 51,200-token extended-context request. It also
+sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS=32768`, because Claude Code otherwise
+assumes a larger window for this unrecognized gateway model ID.
 Override the initial models with `CLAUDE_LOCAL_MODEL` and
 `CLAUDE_LOCAL_SMALL_FAST_MODEL` when needed.
 
