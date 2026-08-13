@@ -456,11 +456,11 @@ URL or requests become `/v1/v1/messages` and fail with HTTP 404.
 The router exposes the Anthropic Messages endpoint natively, so no translation
 proxy is required. Claude Code's session model remains in charge after
 startup. The wrapper's initial local model is selectable with
-`CLAUDE_LOCAL_MODEL` or `--model`. It keeps the Mac mini as the single explicit
-custom picker entry and pins the M4 Max peer to Claude Code's Opus slot using
-`ANTHROPIC_DEFAULT_OPUS_MODEL` plus its `_NAME` and `_DESCRIPTION` companions;
-this works around Claude Code's one-custom-entry limit while keeping both
-router-qualified IDs selectable. To choose a specific peer directly, use
+`CLAUDE_LOCAL_MODEL` or `--model`. Claude Code's gateway discovery filters
+non-Anthropic model IDs, so the wrapper pins the Opus alias to the M4 Max
+model (with a local display name) and uses the one custom entry for the Mac
+mini; both peers consequently appear in the native picker. To choose a
+specific peer deterministically, use
 `--model macmini/qwen3-coder-next` or `--model m4max/qwen3-coder-next` when
 starting a new session. The wrapper also sets
 `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`; the mini has a 32,768-token context and
