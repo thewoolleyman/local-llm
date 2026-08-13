@@ -40,15 +40,18 @@ export ANTHROPIC_BASE_URL="http://${LOCAL_LLM_ROUTER_HOST}:${LOCAL_LLM_ROUTER_PO
 export ANTHROPIC_AUTH_TOKEN="$LOCAL_LLM_ROUTER_API_KEY"
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$CLAUDE_LOCAL_MODEL}"
 export ANTHROPIC_SMALL_FAST_MODEL="${ANTHROPIC_SMALL_FAST_MODEL:-$CLAUDE_LOCAL_SMALL_FAST_MODEL}"
-# Claude Code's built-in aliases otherwise name cloud Anthropic models. Map
-# them to the selected local model so choosing opus/sonnet/haiku in /model
-# cannot accidentally ask the local router for a nonexistent cloud model.
-export ANTHROPIC_DEFAULT_OPUS_MODEL="${ANTHROPIC_DEFAULT_OPUS_MODEL:-$CLAUDE_LOCAL_MODEL}"
-export ANTHROPIC_DEFAULT_SONNET_MODEL="${ANTHROPIC_DEFAULT_SONNET_MODEL:-$CLAUDE_LOCAL_MODEL}"
-export ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-$CLAUDE_LOCAL_SMALL_FAST_MODEL}"
 # Claude Code 2.1.129+ requires this opt-in before it discovers gateway
 # models from /v1/models for the native /model picker.
 export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY="${CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY:-1}"
+# The local servers advertise 32K (mini) and 65K (M4 Max), not Claude's 1M
+# context. Disable Claude Code's extended-context request mode or it will send
+# a 51,200-token request to the mini and llama.cpp will reject it.
+export CLAUDE_CODE_DISABLE_1M_CONTEXT="${CLAUDE_CODE_DISABLE_1M_CONTEXT:-1}"
+# Keep one explicit custom entry for clients where gateway discovery is absent
+# or filtered; do not manufacture one entry per Anthropic alias.
+export ANTHROPIC_CUSTOM_MODEL_OPTION="${ANTHROPIC_CUSTOM_MODEL_OPTION:-$CLAUDE_LOCAL_MODEL}"
+export ANTHROPIC_CUSTOM_MODEL_OPTION_NAME="${ANTHROPIC_CUSTOM_MODEL_OPTION_NAME:-Local LLM ($CLAUDE_LOCAL_MODEL)}"
+export ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION="${ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION:-Local model via macmini fleet router}"
 
 # Do not let a normal Claude.ai/API or cloud-provider credential route this
 # process away from the local router. Keep nonessential network traffic local.
