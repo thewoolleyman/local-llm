@@ -19,6 +19,13 @@ while [ -L "$SOURCE_PATH" ]; do
   esac
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
+# This wrapper ends in `exec`, which REPLACES this process image -- so the
+# wrapper leaves no trace in the launched agent's parent chain, and a
+# supervisor that wants to relaunch the session through the same wrapper
+# cannot discover it by walking parents. The environment DOES survive exec,
+# so publish the wrapper's own resolved path there as the durable record.
+# Read by livespec-overseer's launch-profile capture; harmless otherwise.
+export LIVESPEC_LOCAL_LLM_WRAPPER="$SCRIPT_DIR/${SOURCE_PATH##*/}"
 # shellcheck source=bin/lib/local-llm-common.sh
 source "$SCRIPT_DIR/lib/local-llm-common.sh"
 

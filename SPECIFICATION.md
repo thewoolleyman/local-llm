@@ -220,6 +220,15 @@ All wrappers:
 - Leave model selection and session state to Codex/Pi instead of forcing a
   model in the wrapper.
 - Keep the normal frontier-provider default unchanged.
+- Export `LIVESPEC_LOCAL_LLM_WRAPPER` with the wrapper's own resolved
+  absolute path. Every wrapper ends in `exec`, which replaces the process
+  image, so the wrapper leaves no trace in the launched client's parent
+  chain; a supervisor that wants to relaunch the session through the same
+  wrapper cannot discover it by walking parents. The environment survives
+  `exec`, so this variable is the durable record. It is read by
+  livespec-overseer's launch-profile capture and is inert for anything
+  that does not look at it. This is a one-directional read of this repo:
+  nothing here depends on livespec-overseer.
 
 `bin/claude-local-llm` additionally selects Claude Code's Anthropic Messages
 transport against the fleet router, sets a valid local initial model, and
