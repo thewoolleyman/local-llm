@@ -6,17 +6,28 @@ resource policy, and [HANDOFF.md](./HANDOFF.md) for the latest resume snapshot.
 
 ## 1. Current deployment
 
-Both model servers, the fleet router, and the client workflows are complete and
-were reverified from `chads-macbook-pro` on 2026-08-07.
+The two Mac model servers, the fleet router, and the client workflows are
+complete and were reverified from `chads-macbook-pro` on 2026-08-07. A third
+host, `gmktec-xubuntu`, is being added to the pool (see its bring-up status
+below).
 
 | Host | Model quant | Server context/concurrency | Client key file | State |
 |---|---|---|---|---|
 | `macbook-m4-max` | Qwen3-Coder-Next Q6_K, four shards, about 61 GB | 65,536-token unified KV cache; four auto-selected slots | `~/.config/local-llm/api-key` | LaunchDaemon running; API, Codex, and Pi verified |
 | `macmini` | Qwen3-Coder-Next Q4_K_M, four shards, 48,410,992,032 bytes | 32,768-token unified KV cache shared by two explicit slots | `~/.config/local-llm/api-key-macmini` | LaunchDaemon running; API, Codex, and Pi verified |
+| `gmktec-xubuntu` | Qwen3-Coder-Next Q4_K_M, four shards, ~48 GB | 32,768-token unified KV cache shared by two explicit slots (target; may raise on this dedicated box) | `~/.config/local-llm/api-key-gmktec` | Server bring-up delegated to the `gmktec-xubuntu-info` repo/session; router wiring pending |
 
-The deployed `llama-server` on both hosts reported llama.cpp version `10280`
+The deployed `llama-server` on both Macs reported llama.cpp version `10280`
 (`61881b1f7`) during final verification. The fleet router is llama-swap `v247`.
 The clients tested were Codex CLI `0.147.0` and Pi `0.83.0`.
+
+`gmktec-xubuntu` is a Linux/amdgpu host, so its install differs from the Macs
+(systemd instead of LaunchDaemon, llama.cpp Vulkan/ROCm instead of Metal). Its
+machine-specific install, hardware notes, and service definition live in the
+separate [`gmktec-xubuntu-info`](https://github.com/thewoolleyman/gmktec-xubuntu-info)
+repo, which is edited directly on that machine and auto-committed there. This
+repo owns only the fleet router entry, client wrappers, catalogs, and the model
+contract for that peer.
 
 ## 2. Server architecture
 
@@ -52,7 +63,7 @@ The model is
 [Qwen3-Coder-Next](https://huggingface.co/Qwen/Qwen3-Coder-Next-GGUF),
 an 80B-total/~3B-active MoE coding model with 256K native context. The deployed
 context is deliberately smaller to fit useful concurrency and memory headroom.
-Both hosts use `--alias qwen3-coder-next`, so clients use one stable model ID
+All hosts use `--alias qwen3-coder-next`, so clients use one stable model ID
 regardless of the host-specific quant.
 
 Qwen3-Coder-Next was confirmed against its primary Hugging Face repository. An
@@ -115,8 +126,47 @@ is deliberately excluded.
   startup as complete only after `/v1/models` answers, not merely when
   `launchctl` says the process is running.
 
-Downloads use `curl -C -` and are resumable. Exact commands are kept in Git
-history; no download remains in progress.
+### `gmktec-xubuntu`
+
+This host is Linux (Ubuntu 26.04 / Xubuntu) on an AMD Ryzen AI MAX+ 395 with a
+Radeon 8060S iGPU (RDNA3.5, `gfx1151`) and 64 GiB of unified LPDDR5 shared with
+the iGPU — memory-comparable to the Mac mini, so it uses the same quant.
+
+- Model path (target):
+  `~/models/Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00001-of-00004.gguf`
+- Quant: Q4_K_M, four GGUF shards, ~48 GB.
+- Backend: llama.cpp built with Vulkan (`-DGGML_VULKAN=ON`) for the 8060S iGPU;
+  ROCm is an acceptable alternative only if `gfx1151` support is confirmed
+  working. The whole model is offloaded (`--n-gpu-layers 999`) against the
+  unified memory pool.
+- Target flags (mirror the Mac mini; may be raised on this dedicated box):
+
+  ```text
+  --ctx-size 32768
+  --parallel 2
+  --kv-unified
+  --n-gpu-layers 999
+  --flash-attn on
+  --alias qwen3-coder-next
+  ```
+
+- `--kv-unified` must be explicit here for the same reason as the Mac mini:
+  an explicit `--parallel` disables llama.cpp's automatic unified KV cache.
+- Because this is a dedicated headless-style host with no competing desktop
+  user (unlike the M4 Max's music workstation), more of the 64 GiB is free, so
+  the shipped `--ctx-size`/`--parallel` may be larger than the Mac mini's. The
+  actual deployed values are recorded in the `gmktec-xubuntu-info` repo and
+  reconciled into §1 once bring-up completes.
+- The server binds only the Tailscale IPv4 (resolved via `tailscale ip -4` at
+  every start), port `8080`, and requires the per-host bearer key stored
+  `0600` at `~/.llama-server-api-key`. It is managed by a systemd unit (the
+  Linux equivalent of the Macs' root LaunchDaemon) that restarts on failure
+  and starts at boot after `tailscaled`.
+
+Downloads use `curl -C -` and are resumable. Exact commands for the Macs are
+kept in this repo's Git history; the `gmktec-xubuntu` download/build/service
+commands are kept in the `gmktec-xubuntu-info` repo. No download remains in
+progress here.
 
 ## 4. API behavior and lifecycle
 
@@ -163,8 +213,9 @@ requested model ID.
   `mostlygeek/llama-swap` Homebrew tap in the `homelab`-owned Homebrew prefix.
 - Config: `~/.config/llama-swap/config.yaml`.
 - Secret environment file: `~/.config/llama-swap/secrets.env`, mode `0600`,
-  owned by `homelab`; it contains the router key and the two upstream
-  llama-server keys. It is never committed.
+  owned by `homelab`; it contains the router key and each upstream
+  llama-server key (`MACMINI_LLAMA_KEY`, `M4MAX_LLAMA_KEY`, and
+  `GMKTEC_LLAMA_KEY`). It is never committed.
 - Launcher: `~/bin/run-llama-swap.sh`.
 - Listener: `100.99.172.34:8081`, Tailscale-only; it is not bound to
   `0.0.0.0`.
@@ -175,14 +226,21 @@ requested model ID.
   `~/Library/Logs/llama-swap.error.log`.
 
 The checked-in deployment templates are under
-[`deploy/llama-swap/`](./deploy/llama-swap/). The config has two current peers:
+[`deploy/llama-swap/`](./deploy/llama-swap/). The config declares three peers:
 
 | Router model ID | Upstream | Context |
 |---|---|---:|
 | `macmini/qwen3-coder-next` | `100.99.172.34:8080` / Q4_K_M | 32,768 |
 | `m4max/qwen3-coder-next` | `100.125.10.110:8080` / Q6_K | 65,536 |
+| `gmktec/qwen3-coder-next` | `100.79.195.82:8080` / Q4_K_M | 32,768 |
 
-To add a future host, add a peer entry to the deployed config with its
+The `gmktec` peer is checked into the template. It becomes live once the
+deployed router config on `macmini` is refreshed from this template **and**
+`GMKTEC_LLAMA_KEY` is added to `macmini`'s `~/.config/llama-swap/secrets.env`
+(the `gmktec-xubuntu` bearer key, installed out of band). See §6's client-key
+steps for retrieving that key; do not commit it.
+
+To add a further host, add a peer entry to the deployed config with its
 Tailscale address, an environment-variable reference for its bearer key, and
 the model IDs it serves. Keep the corresponding secret only in
 `secrets.env`; do not add keys to YAML, plist, Git, or Codex metadata.
@@ -216,7 +274,8 @@ All wrappers:
 
 - Use the Mac mini fleet router at `macmini:8081` and check its readiness
   before starting the client.
-- Expose both router-qualified models to the client's native model picker.
+- Expose every router-qualified model (`macmini/`, `m4max/`, and
+  `gmktec/qwen3-coder-next`) to the client's native model picker.
 - Leave model selection and session state to Codex/Pi instead of forcing a
   model in the wrapper.
 - Keep the normal frontier-provider default unchanged.
@@ -277,9 +336,15 @@ chmod 600 ~/.config/local-llm/api-key \
   ~/.config/local-llm/api-key-macmini
 ```
 
+The `gmktec-xubuntu` server writes its own bearer key to
+`~/.config/local-llm/api-key-gmktec` during bring-up (see the
+`gmktec-xubuntu-info` repo for the exact source path on that host). This is the
+key that must also be installed as `GMKTEC_LLAMA_KEY` in the `macmini` router's
+`secrets.env` before the `gmktec` peer can serve traffic.
+
 ### Normal use
 
-Both wrappers use the fleet router and expose both local models to the native
+The wrappers use the fleet router and expose all local models to the native
 client picker:
 
 ```bash
@@ -331,10 +396,11 @@ access merely for convenience.
 
 The user's normal Codex installation now has a merged catalog at
 `~/.codex/model-catalog-with-local.json`. It contains the current frontier
-catalog from `~/.codex/models_cache.json` plus the two router-qualified local
-entries. `~/.codex/config.toml` points `model_catalog_json` at that merged
+catalog from `~/.codex/models_cache.json` plus the router-qualified local
+entries (`macmini/`, `m4max/`, and `gmktec/qwen3-coder-next`).
+`~/.codex/config.toml` points `model_catalog_json` at that merged
 file and defines the `local-llm-fleet` provider, so the normal model picker
-shows both local router models alongside the frontier models.
+shows all local router models alongside the frontier models.
 
 The merged catalog is a local generated artifact rather than a repository
 file. When Codex refreshes `models_cache.json` after a client update, rebuild it
@@ -465,13 +531,15 @@ URL or requests become `/v1/v1/messages` and fail with HTTP 404.
 The router exposes the Anthropic Messages endpoint natively, so no translation
 proxy is required. Claude Code's session model remains in charge after
 startup. The wrapper's initial local model is selectable with
-`CLAUDE_LOCAL_MODEL` or `--model`. Claude Code's gateway discovery filters
-non-Anthropic model IDs, so the wrapper pins the Opus alias to the M4 Max
-model (with a local display name) and uses the one custom entry for the Mac
-mini; both peers consequently appear in the native picker. To choose a
-specific peer deterministically, use
-`--model macmini/qwen3-coder-next` or `--model m4max/qwen3-coder-next` when
-starting a new session. The wrapper also sets
+`CLAUDE_LOCAL_MODEL` or `--model`. Claude Code's gateway discovery only keeps
+model IDs containing `claude`/`anthropic` (case-insensitive substring), so the
+fleet's `qwen3-coder-next` IDs are filtered out of auto-discovery. The wrapper
+therefore pins each peer to a built-in alias so all three appear in the native
+picker with local display names: the Opus alias to the M4 Max peer, the Sonnet
+alias to the GMKtec peer, and the main model plus the one custom entry to the
+Mac mini. To choose a specific peer deterministically, use
+`--model macmini/qwen3-coder-next`, `--model m4max/qwen3-coder-next`, or
+`--model gmktec/qwen3-coder-next` when starting a new session. The wrapper also sets
 `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`; the mini has a 32,768-token context and
 cannot accept Claude Code's 51,200-token extended-context request. It also
 sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS=32768`, because Claude Code otherwise
@@ -510,8 +578,9 @@ servers are stable.
 pi --provider local-llm <all original arguments>
 ```
 
-The generated provider exposes both `macmini/qwen3-coder-next` and
-`m4max/qwen3-coder-next`, uses Pi's native `openai-completions` provider against
+The generated provider exposes `macmini/qwen3-coder-next`,
+`m4max/qwen3-coder-next`, and `gmktec/qwen3-coder-next`, uses Pi's native
+`openai-completions` provider against
 the fleet router's `/v1/chat/completions`, resolves the exported
 `LOCAL_LLM_ROUTER_API_KEY` through Pi's command-backed `apiKey` configuration
 instead of writing the secret into JSON or process arguments, and caps
@@ -522,8 +591,8 @@ session state remain in charge.
 
 The full watchdog plan is tracked in
 [`tmp/watchdog-plan.md`](./tmp/watchdog-plan.md). It is a planned design for
-deployment on both `macbook-m4-max` and `macmini`; the recurring root-owned
-LaunchDaemon deployment is not yet installed.
+deployment on `macbook-m4-max`, `macmini`, and `gmktec-xubuntu`; the recurring
+per-host watchdog service is not yet installed on any host.
 
 The runnable first implementation is `bin/local-llm-watchdog`. It runs from
 the client over SSH and supports:
@@ -550,17 +619,19 @@ Dogfooding on 2026-08-12 showed:
 This validates the busy-vs-stuck guard against the current failure mode, where
 the process can be running while requests are slow or KV capacity is under
 pressure. Remaining work is the plan's dry-run deployment, peer drain,
-root-owned LaunchDaemon installation on both hosts, circuit breaking, and
-controlled failure testing.
+per-host supervisor installation on every host (root LaunchDaemon on the Macs,
+systemd unit on `gmktec-xubuntu`), circuit breaking, and controlled failure
+testing.
 
-### Planned watchdog contract for both hosts
+### Planned watchdog contract for every host
 
-The eventual deployment is one root-owned
-`/Library/LaunchDaemons/local.homelab.llama-watchdog.plist` per host. The
-existing `local.homelab.llama-server` LaunchDaemon remains the process
-supervisor; the watchdog handles live-but-unhealthy inference. The host targets
-are `macbook-m4-max:8080` with four auto-selected 65,536-token slots and
-`macmini:8080` with two 32,768-token slots. The Mac mini's
+The eventual deployment is one root-owned per-host supervisor (a
+`/Library/LaunchDaemons/local.homelab.llama-watchdog.plist` on the Macs, a
+systemd unit on `gmktec-xubuntu`). The existing per-host `llama-server` boot
+service remains the process supervisor; the watchdog handles
+live-but-unhealthy inference. The host targets are `macbook-m4-max:8080` with
+four auto-selected 65,536-token slots, `macmini:8080` with two 32,768-token
+slots, and `gmktec-xubuntu:8080` with its shipped slot count. The Mac mini's
 `local.homelab.llama-swap` router is monitored separately and must not be
 restarted merely because one model peer is unhealthy.
 
@@ -589,7 +660,7 @@ occupied; must serialize recovery, use backoff, preserve rotated logs, retain
 Tailscale-only binding and secret isolation, and avoid `cwoolley`'s files or
 processes. Acceptance requires proving that progressing long prompts remain
 busy, wedged servers recover, healthy peers are not restarted, router failures
-recover independently, and boot/reboot starts protection on both hosts.
+recover independently, and boot/reboot starts protection on every host.
 
 ## 11. Final verification evidence
 
@@ -648,5 +719,5 @@ Operational gotchas already encountered:
 - CI runner setup on either `homelab` user.
 - Automatic model updates, quant switching, or failover between hosts.
 - MLX-based serving.
-- Automatic load balancing across the two hosts. Model selection remains
+- Automatic load balancing across fleet hosts. Model selection remains
   explicit through each client's native model picker.

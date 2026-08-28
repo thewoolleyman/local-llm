@@ -36,12 +36,17 @@ fi
 
 : "${CLAUDE_LOCAL_MODEL:=macmini/qwen3-coder-next}"
 : "${CLAUDE_LOCAL_SMALL_FAST_MODEL:=$CLAUDE_LOCAL_MODEL}"
-# Claude Code's gateway discovery only admits IDs in the Claude/Anthropic
-# families. Pin the Opus alias to the second fleet model so the picker exposes
-# it alongside the explicit custom entry below.
+# Claude Code's gateway discovery only admits model IDs containing "claude"/
+# "anthropic", so the fleet's qwen3 IDs are filtered out of auto-discovery.
+# Pin each fleet peer to a built-in alias instead so all three appear in the
+# native /model picker: Opus -> M4 Max, Sonnet -> GMKtec, and the main model +
+# custom entry below -> Mac mini. (The Haiku alias stays the small/fast model.)
 : "${ANTHROPIC_DEFAULT_OPUS_MODEL:=m4max/qwen3-coder-next}"
 : "${ANTHROPIC_DEFAULT_OPUS_MODEL_NAME:=Local LLM (M4 Max)}"
 : "${ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION:=Local model via M4 Max fleet router}"
+: "${ANTHROPIC_DEFAULT_SONNET_MODEL:=gmktec/qwen3-coder-next}"
+: "${ANTHROPIC_DEFAULT_SONNET_MODEL_NAME:=Local LLM (GMKtec EVO-X2)}"
+: "${ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION:=Local model via GMKtec fleet router}"
 
 local_llm_require_router_key
 local_llm_check_router_reachable
@@ -54,12 +59,13 @@ export ANTHROPIC_AUTH_TOKEN="$LOCAL_LLM_ROUTER_API_KEY"
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$CLAUDE_LOCAL_MODEL}"
 export ANTHROPIC_SMALL_FAST_MODEL="${ANTHROPIC_SMALL_FAST_MODEL:-$CLAUDE_LOCAL_SMALL_FAST_MODEL}"
 export ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL_NAME ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION
+export ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL_NAME ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION
 # Claude Code 2.1.129+ requires this opt-in before it discovers gateway
 # models from /v1/models for the native /model picker.
 export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY="${CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY:-1}"
-# The local servers advertise 32K (mini) and 65K (M4 Max), not Claude's 1M
-# context. Disable Claude Code's extended-context request mode or it will send
-# a 51,200-token request to the mini and llama.cpp will reject it.
+# The local servers advertise 32K (mini), 32K (GMKtec), and 65K (M4 Max), not
+# Claude's 1M context. Disable Claude Code's extended-context request mode or it
+# will send a 51,200-token request to a 32K peer and llama.cpp will reject it.
 export CLAUDE_CODE_DISABLE_1M_CONTEXT="${CLAUDE_CODE_DISABLE_1M_CONTEXT:-1}"
 # The gateway model ID is intentionally unrecognized by Claude Code, whose
 # fallback assumption is larger than the llama.cpp mini context. Declare the

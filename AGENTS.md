@@ -60,14 +60,41 @@ snapshot to resume work from a fresh context.
   setup work on this host stalls with no progress, check whether it went
   back to sleep before assuming something else is wrong.
 
-Both hosts run the same pattern (see SPECIFICATION.md §1): a `homelab`
+### `gmktec-xubuntu`
+
+- **Hardware**: GMKtec NucBox EVO-X2. AMD Ryzen AI MAX+ 395 (Strix Halo,
+  16 cores / 32 threads) with an integrated Radeon 8060S iGPU (RDNA3.5,
+  `gfx1151`), **64 GiB LPDDR5 unified** memory shared with the iGPU, 2 TB
+  NVMe. Ubuntu 26.04 / Xubuntu on the in-kernel `amdgpu` driver — **not**
+  Apple Silicon/Metal and not an Intel/NVIDIA stack.
+- **Tailscale**: hostname `gmktec-xubuntu`, IP `100.79.195.82`.
+- **Purpose**: a dedicated homelab box (no competing desktop workload like
+  the M4 Max's music production), so more of its 64 GiB is free for
+  inference and other jobs.
+- **Machine-specific truth lives elsewhere**: this host's hardware notes,
+  install steps, systemd service, and display/boot caveats are maintained
+  in the separate
+  [`gmktec-xubuntu-info`](https://github.com/thewoolleyman/gmktec-xubuntu-info)
+  repo, edited directly on the machine and auto-committed there. All
+  changes to that machine and its install are delegated to that repo's
+  session, not made from here. This repo owns only the fleet router entry,
+  client wrappers, catalogs, and model contract for the `gmktec` peer.
+- **Linux differences from the Macs**: llama.cpp uses the Vulkan (or ROCm)
+  backend instead of Metal; the boot service is a systemd unit instead of a
+  root `LaunchDaemon`; logs and paths follow Linux conventions. The fleet
+  contract is otherwise identical — a dedicated service user owns the model,
+  the server binds only the Tailscale IPv4 on port `8080` with a per-host
+  bearer key, and it serves the stable `qwen3-coder-next` alias.
+
+The two Macs run the same macOS pattern (see SPECIFICATION.md §1): a `homelab`
 user with an isolated per-user Homebrew prefix at `~/.homebrew` (not
 `/opt/homebrew` — avoids touching/needing sudo on the system prefix,
 and keeps it fully separate from `cwoolley`'s Homebrew if any), running
-`llama-server` as a system `LaunchDaemon`.
+`llama-server` as a system `LaunchDaemon`. `gmktec-xubuntu` mirrors this
+with the Linux equivalents above.
 
 Agents driving this setup should SSH over the Tailscale hostnames above
-rather than assuming local shell access on either host.
+rather than assuming local shell access on any host.
 
 ## Client/provider workflow
 

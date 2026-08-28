@@ -3,6 +3,7 @@
 # Peer model IDs are exposed as <peer>/<model>, for example:
 #   macmini/qwen3-coder-next
 #   m4max/qwen3-coder-next
+#   gmktec/qwen3-coder-next
 #
 # Add future Tailscale-hosted llama-server instances under `peers`.
 # Keep credentials in /Users/homelab/.config/llama-swap/secrets.env, not here.
@@ -23,6 +24,12 @@ peers:
   m4max:
     proxy: "http://100.125.10.110:8080"
     apiKey: "${env.M4MAX_LLAMA_KEY}"
+    models:
+      - qwen3-coder-next
+
+  gmktec:
+    proxy: "http://100.79.195.82:8080"
+    apiKey: "${env.GMKTEC_LLAMA_KEY}"
     models:
       - qwen3-coder-next
 

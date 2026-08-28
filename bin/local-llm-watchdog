@@ -5,7 +5,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --host macmini|macbook-m4-max [--once|--recover] [--interval seconds] [--samples count]" >&2
+  echo "usage: $0 --host macmini|macbook-m4-max|gmktec-xubuntu [--once|--recover] [--interval seconds] [--samples count]" >&2
   exit 2
 }
 
@@ -24,9 +24,20 @@ while (($#)); do
   esac
 done
 
+# Each host maps to its client-side bearer key and its native service-restart
+# command. The Macs use a root LaunchDaemon (launchctl); gmktec-xubuntu is Linux
+# and uses systemd. Override the gmktec unit name with GMKTEC_LLAMA_SERVICE if
+# the deployed unit differs from the default.
 case "$host" in
-  macmini) key_file="$HOME/.config/local-llm/api-key-macmini" ;;
-  macbook-m4-max) key_file="$HOME/.config/local-llm/api-key" ;;
+  macmini)
+    key_file="$HOME/.config/local-llm/api-key-macmini"
+    restart_cmd="sudo launchctl kickstart -k system/local.homelab.llama-server" ;;
+  macbook-m4-max)
+    key_file="$HOME/.config/local-llm/api-key"
+    restart_cmd="sudo launchctl kickstart -k system/local.homelab.llama-server" ;;
+  gmktec-xubuntu)
+    key_file="$HOME/.config/local-llm/api-key-gmktec"
+    restart_cmd="sudo systemctl restart ${GMKTEC_LLAMA_SERVICE:-local-homelab-llama-server}" ;;
   *) usage ;;
 esac
 
@@ -80,8 +91,8 @@ fi
 
 echo "state=stuck action=restart host=$host" >&2
 if [[ "$mode" == recover ]]; then
-  ssh "$host" "sudo launchctl kickstart -k system/local.homelab.llama-server"
+  ssh "$host" "$restart_cmd"
   echo "restart=requested host=$host"
 else
-  echo "dry-run: rerun with --recover to restart the affected LaunchDaemon" >&2
+  echo "dry-run: rerun with --recover to restart the affected service" >&2
 fi

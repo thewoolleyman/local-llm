@@ -57,6 +57,12 @@ cat > "$PI_CODING_AGENT_DIR/models.json" <<EOF
           "name": "Qwen3-Coder-Next (M4 Max)",
           "contextWindow": 65536,
           "maxTokens": 8192
+        },
+        {
+          "id": "gmktec/qwen3-coder-next",
+          "name": "Qwen3-Coder-Next (GMKtec EVO-X2)",
+          "contextWindow": 32768,
+          "maxTokens": 8192
         }
       ]
     }
