@@ -1,6 +1,9 @@
 # tmp
 /tmp/
 
+# Playwright MCP browser snapshots
+.playwright-mcp/
+
 # macOS
 .DS_Store
 .AppleDouble
