@@ -7,40 +7,49 @@ deployed design and verification evidence.
 ## Status at a glance
 
 The two Mac hosts were complete as of 2026-08-06. A third host,
-`gmktec-xubuntu`, is being added to the pool (see "Adding gmktec-xubuntu" below).
+`gmktec-xubuntu`, was added to the pool on 2026-08-29 and verified end-to-end
+through the router (see "Adding gmktec-xubuntu" below).
 
-| Host | service user | llama.cpp | Model | Boot service | API | Codex | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `macbook-m4-max` | done | done | Q6_K complete | LaunchDaemon running | verified | verified | verified |
-| `macmini` | done | done | Q4_K_M complete | LaunchDaemon running | verified | verified | verified |
-| `gmktec-xubuntu` | in&nbsp;progress | in&nbsp;progress | Q4_K_M (target) | systemd (planned) | pending | pending | pending |
+| Host | service user | llama.cpp | Model | Boot service | Router | Gen probe |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| `macbook-m4-max` | done | done | Q6_K complete | LaunchDaemon running | live | verified |
+| `macmini` | done | done | Q4_K_M complete | LaunchDaemon running | live | verified |
+| `gmktec-xubuntu` | done | Vulkan build | Q4_K_M complete | systemd running | live | verified |
 
 No download or setup process was left running on the Macs outside the two
-intended `llama-server` LaunchDaemons. The `gmktec-xubuntu` bring-up is running
-in its own repo/session. No CI runner work has been started.
+intended `llama-server` LaunchDaemons. The `gmktec-xubuntu` install and its
+machine docs live in the `gmktec-xubuntu-info` repo. No CI runner work has been
+started.
 
 ## Adding gmktec-xubuntu
 
 `gmktec-xubuntu` (AMD Ryzen AI MAX+ 395, Radeon 8060S iGPU, 64 GiB unified,
-Ubuntu 26.04, Tailscale `100.79.195.82`) is being added as a third
-`qwen3-coder-next` peer. Work is split:
+Ubuntu 26.04, Tailscale `100.79.195.82`) was added as a third
+`qwen3-coder-next` peer on 2026-08-29. All three parts are done:
 
-- **This repo (done)**: the `gmktec` peer is checked into
+- **This repo (done)**: the `gmktec` peer is in
   `deploy/llama-swap/config.yaml`; the client wrappers, the Codex router
-  catalog, and the watchdog now include the `gmktec/qwen3-coder-next` model;
-  the docs are updated. The Claude picker pins it to the Sonnet alias.
-- **`gmktec-xubuntu-info` repo/session (delegated, in progress)**: installs
-  llama.cpp (Vulkan backend for the iGPU), downloads Qwen3-Coder-Next Q4_K_M,
-  serves it as a systemd service bound to the Tailscale IP on port `8080` with
-  a per-host bearer key and the `qwen3-coder-next` alias, and documents the
-  whole install there. It drops the bearer key at
-  `~/.config/local-llm/api-key-gmktec` for pickup.
-- **Live router wiring (remaining, needs `macmini` access)**: refresh the
-  deployed router config on `macmini` from `deploy/llama-swap/config.yaml`, add
-  `GMKTEC_LLAMA_KEY=<gmktec bearer key>` to
-  `~/.config/llama-swap/secrets.env`, and reload
-  `system/local.homelab.llama-swap`. Then the router `/v1/models` will list
-  `gmktec/qwen3-coder-next` and the clients can select it.
+  catalog, and the watchdog include the `gmktec/qwen3-coder-next` model; the
+  docs are updated. The Claude picker pins it to the Sonnet alias.
+- **`gmktec-xubuntu-info` repo/session (done)**: installed llama.cpp with the
+  Vulkan backend (build `b1-d7bd3bf`; RADV exposed ~97 GiB, no GTT/IOMMU tuning
+  needed; `spirv-headers` is a hard build dep), Qwen3-Coder-Next Q4_K_M under
+  `/home/homelab/models/`, served by a systemd service bound to the Tailscale
+  IP on port `8080` (`n_ctx=32768`, two slots, alias `qwen3-coder-next`). The
+  bearer key was dropped at `~/.config/local-llm/api-key-gmktec` for pickup.
+  The full install is documented in that repo.
+- **Live router wiring on `macmini` (done)**: `GMKTEC_LLAMA_KEY` was added to
+  `~homelab/.config/llama-swap/secrets.env`, the deployed `config.yaml` was
+  refreshed with the `gmktec` peer, and `system/local.homelab.llama-swap` was
+  reloaded (over `ssh cwoolley@macmini` + `sudo`). Verified: the router
+  `/v1/models` lists all three qualified IDs and a generation request to
+  `gmktec/qwen3-coder-next` returned `pong` through the router.
+
+Note: normal client use needs no per-host key — the wrappers reach every peer
+through the router with the router key. `~/.config/local-llm/api-key-gmktec` is
+only needed to run the watchdog's *direct* probe against `gmktec-xubuntu`;
+install it on a client (e.g. `chads-macbook-pro`) if that direct probe is
+wanted there.
 
 ## Normal client use
 
@@ -111,16 +120,18 @@ Mac mini:
   sharing the unified cache.
 - Client key: `~/.config/local-llm/api-key-macmini`.
 
-GMKtec EVO-X2 (`gmktec-xubuntu`, in progress):
+GMKtec EVO-X2 (`gmktec-xubuntu`, live):
 
-- Q4_K_M four-shard model targeted under
-  `~/models/Qwen3-Coder-Next-Q4_K_M/` on that host.
-- Linux/systemd service (not a LaunchDaemon), llama.cpp Vulkan backend for the
-  Radeon 8060S iGPU. Target flags mirror the Mac mini
-  (`--ctx-size 32768 --parallel 2 --kv-unified`), possibly larger since the box
-  is dedicated. Actual deployed values are recorded in the `gmktec-xubuntu-info`
-  repo and reconciled into SPECIFICATION.md §1 once bring-up completes.
-- Client key: `~/.config/local-llm/api-key-gmktec`.
+- Q4_K_M four-shard model under
+  `/home/homelab/models/Qwen3-Coder-Next-Q4_K_M/`.
+- Linux/systemd service (not a LaunchDaemon), llama.cpp Vulkan backend
+  (build `b1-d7bd3bf`) for the Radeon 8060S iGPU. Deployed at the Mac mini's
+  `--ctx-size 32768 --parallel 2 --kv-unified` (verified `n_ctx=32768`, two
+  slots). Full install detail lives in the `gmktec-xubuntu-info` repo.
+- Requires the bearer key even for `/v1/models` (the Macs leave it public);
+  harmless via the router, which injects the peer key.
+- Client key: `~/.config/local-llm/api-key-gmktec` (only for direct watchdog
+  probes; normal use goes through the router).
 
 ## If a server is unavailable
 
@@ -137,6 +148,22 @@ ssh macmini \
 ssh macmini-homelab \
   'tail -50 ~/Library/Logs/llama-server.error.log'
 ```
+
+For `gmktec-xubuntu` (Linux/systemd; unit `local-homelab-llama-server.service`,
+service user `homelab`):
+
+```bash
+ssh gmktec-xubuntu \
+  'sudo systemctl status local-homelab-llama-server.service'
+ssh gmktec-xubuntu \
+  'sudo journalctl -u local-homelab-llama-server.service -n 50 --no-pager'
+```
+
+The exact unit, launcher, and log paths are documented in the
+`gmktec-xubuntu-info` repo (`llm-server.md`). As with the Macs, these `ssh`
+examples assume the client's `~/.ssh/config` resolves the host to the right
+remote user (from `chads-macbook-pro`, `100.79.195.82` requires the key even on
+`/v1/models`, so include the bearer key on direct probes).
 
 Wait for `model loaded` and `listening on http://<tailscale-ip>:8080` before
 testing `/v1/models`. A process can be `running` for roughly a minute while an
@@ -182,9 +209,11 @@ wrong. Confirm the per-host client key file rather than restarting the daemon.
 
 ## Remaining work
 
-`gmktec-xubuntu` server bring-up (delegated to its own repo/session) and the
-live router wiring on `macmini` (add `GMKTEC_LLAMA_KEY`, refresh the config,
-reload `local.homelab.llama-swap`) remain pending; see "Adding gmktec-xubuntu".
+`gmktec-xubuntu` is fully added and verified (server, router wiring, and
+generation probe — see "Adding gmktec-xubuntu"). Optional follow-ups: install
+`~/.config/local-llm/api-key-gmktec` on `chads-macbook-pro` if direct watchdog
+probing of that host is wanted, and consider raising its `--ctx-size`/
+`--parallel` since the dedicated box has headroom. Still pending fleet-wide:
 Claude live tool-loop verification and recurring per-host watchdog service
-deployment also remain pending. Future CI runners, automatic failover, model
-updates, and MLX serving remain explicitly out of scope.
+deployment. Future CI runners, automatic failover, model updates, and MLX
+serving remain explicitly out of scope.

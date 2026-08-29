@@ -8,18 +8,20 @@ resource policy, and [HANDOFF.md](./HANDOFF.md) for the latest resume snapshot.
 
 The two Mac model servers, the fleet router, and the client workflows are
 complete and were reverified from `chads-macbook-pro` on 2026-08-07. A third
-host, `gmktec-xubuntu`, is being added to the pool (see its bring-up status
-below).
+host, `gmktec-xubuntu`, was added to the pool on 2026-08-29 and verified
+end-to-end through the router.
 
 | Host | Model quant | Server context/concurrency | Client key file | State |
 |---|---|---|---|---|
 | `macbook-m4-max` | Qwen3-Coder-Next Q6_K, four shards, about 61 GB | 65,536-token unified KV cache; four auto-selected slots | `~/.config/local-llm/api-key` | LaunchDaemon running; API, Codex, and Pi verified |
 | `macmini` | Qwen3-Coder-Next Q4_K_M, four shards, 48,410,992,032 bytes | 32,768-token unified KV cache shared by two explicit slots | `~/.config/local-llm/api-key-macmini` | LaunchDaemon running; API, Codex, and Pi verified |
-| `gmktec-xubuntu` | Qwen3-Coder-Next Q4_K_M, four shards, ~48 GB | 32,768-token unified KV cache shared by two explicit slots (target; may raise on this dedicated box) | `~/.config/local-llm/api-key-gmktec` | Server bring-up delegated to the `gmktec-xubuntu-info` repo/session; router wiring pending |
+| `gmktec-xubuntu` | Qwen3-Coder-Next Q4_K_M, four shards, ~48 GB | 32,768-token unified KV cache shared by two explicit slots | `~/.config/local-llm/api-key-gmktec` | systemd service running; live in the router, generation verified |
 
 The deployed `llama-server` on both Macs reported llama.cpp version `10280`
-(`61881b1f7`) during final verification. The fleet router is llama-swap `v247`.
-The clients tested were Codex CLI `0.147.0` and Pi `0.83.0`.
+(`61881b1f7`) during final verification. `gmktec-xubuntu` runs a newer
+Vulkan-backend build reporting `b1-d7bd3bf` with `n_ctx=32768` and two slots.
+The fleet router is llama-swap `v247`. The clients tested were Codex CLI
+`0.147.0` and Pi `0.83.0`.
 
 `gmktec-xubuntu` is a Linux/amdgpu host, so its install differs from the Macs
 (systemd instead of LaunchDaemon, llama.cpp Vulkan/ROCm instead of Metal). Its
@@ -132,14 +134,16 @@ This host is Linux (Ubuntu 26.04 / Xubuntu) on an AMD Ryzen AI MAX+ 395 with a
 Radeon 8060S iGPU (RDNA3.5, `gfx1151`) and 64 GiB of unified LPDDR5 shared with
 the iGPU — memory-comparable to the Mac mini, so it uses the same quant.
 
-- Model path (target):
-  `~/models/Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00001-of-00004.gguf`
+- Model path:
+  `/home/homelab/models/Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00001-of-00004.gguf`
 - Quant: Q4_K_M, four GGUF shards, ~48 GB.
-- Backend: llama.cpp built with Vulkan (`-DGGML_VULKAN=ON`) for the 8060S iGPU;
-  ROCm is an acceptable alternative only if `gfx1151` support is confirmed
-  working. The whole model is offloaded (`--n-gpu-layers 999`) against the
-  unified memory pool.
-- Target flags (mirror the Mac mini; may be raised on this dedicated box):
+- Backend: llama.cpp built with Vulkan (`-DGGML_VULKAN=ON`) for the 8060S iGPU.
+  The RADV Vulkan driver exposed ~97 GiB of addressable memory, so no
+  `amdgpu` GTT/IOMMU tuning was needed and the whole model offloads
+  (`--n-gpu-layers 999`). `spirv-headers`/SPIR-V dev packages are a hard build
+  dependency of the Vulkan backend. (ROCm is a possible alternative only with
+  confirmed `gfx1151` support; Vulkan was used and is the recommended path.)
+- Deployed flags (mirror the Mac mini; verified `n_ctx=32768`, two slots):
 
   ```text
   --ctx-size 32768
@@ -152,16 +156,22 @@ the iGPU — memory-comparable to the Mac mini, so it uses the same quant.
 
 - `--kv-unified` must be explicit here for the same reason as the Mac mini:
   an explicit `--parallel` disables llama.cpp's automatic unified KV cache.
-- Because this is a dedicated headless-style host with no competing desktop
-  user (unlike the M4 Max's music workstation), more of the 64 GiB is free, so
-  the shipped `--ctx-size`/`--parallel` may be larger than the Mac mini's. The
-  actual deployed values are recorded in the `gmktec-xubuntu-info` repo and
-  reconciled into §1 once bring-up completes.
+- This is a dedicated headless-style host with no competing desktop user
+  (unlike the M4 Max's music workstation), so more of the 64 GiB is free.
+  It shipped at the Mac mini's `--ctx-size 32768 --parallel 2` for
+  consistency; there is headroom to raise these later. The full install
+  (build, download, systemd unit, launcher, gotchas) is recorded in the
+  `gmktec-xubuntu-info` repo.
 - The server binds only the Tailscale IPv4 (resolved via `tailscale ip -4` at
   every start), port `8080`, and requires the per-host bearer key stored
   `0600` at `~/.llama-server-api-key`. It is managed by a systemd unit (the
   Linux equivalent of the Macs' root LaunchDaemon) that restarts on failure
   and starts at boot after `tailscaled`.
+- Unlike the Macs, this build requires the bearer key even for `/v1/models`
+  (the Macs leave that metadata public). This is harmless for the fleet: the
+  router injects the peer key when forwarding, and clients reach models through
+  the router, not this endpoint directly. Direct probes (e.g. the watchdog)
+  must send the key.
 
 Downloads use `curl -C -` and are resumable. Exact commands for the Macs are
 kept in this repo's Git history; the `gmktec-xubuntu` download/build/service
@@ -234,11 +244,12 @@ The checked-in deployment templates are under
 | `m4max/qwen3-coder-next` | `100.125.10.110:8080` / Q6_K | 65,536 |
 | `gmktec/qwen3-coder-next` | `100.79.195.82:8080` / Q4_K_M | 32,768 |
 
-The `gmktec` peer is checked into the template. It becomes live once the
-deployed router config on `macmini` is refreshed from this template **and**
-`GMKTEC_LLAMA_KEY` is added to `macmini`'s `~/.config/llama-swap/secrets.env`
-(the `gmktec-xubuntu` bearer key, installed out of band). See §6's client-key
-steps for retrieving that key; do not commit it.
+The `gmktec` peer is live: the deployed router config on `macmini` was
+refreshed from this template and `GMKTEC_LLAMA_KEY` (the `gmktec-xubuntu`
+bearer key) was added to `macmini`'s `~/.config/llama-swap/secrets.env` on
+2026-08-29. The router `/v1/models` returns all three qualified IDs and a
+generation request to `gmktec/qwen3-coder-next` was verified end-to-end. To
+re-add or rotate the key, see §6's client-key steps; do not commit it.
 
 To add a further host, add a peer entry to the deployed config with its
 Tailscale address, an environment-variable reference for its bearer key, and
