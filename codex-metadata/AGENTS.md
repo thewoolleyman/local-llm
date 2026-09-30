@@ -5,37 +5,37 @@ provider used by this repository. It prevents Codex from falling back to
 generic metadata for `qwen3-coder-next` (the warning beginning “Model metadata
 for ... not found”). The file contains no credentials or host-specific URLs.
 
-## Install for a normal local Codex installation
+## Install in a dedicated local profile
 
-From the repository root, set the absolute catalog path in the Codex config:
+From the durable repository checkout, install the fleet profile:
 
 ```bash
-catalog="$PWD/codex-metadata/model-catalog.json"
-codex -c "model_catalog_json=\"$catalog\""
+python3 bin/install-codex-local-llm.py
+codex --profile local-llm
 ```
 
-For a persistent installation, add this line to `~/.codex/config.toml`:
+The installer adds this setting only to `~/.codex/local-llm.config.toml`:
 
 ```toml
-model_catalog_json = "/absolute/path/to/local-llm/codex-metadata/model-catalog.json"
+model_catalog_json = "/absolute/path/to/local-llm/codex-metadata/local-router-model-catalog.json"
 ```
 
-The path must be absolute. Restart Codex after changing it; the catalog is
-loaded only during startup. Keep the normal `model =` and provider settings
-appropriate for the installation, for example `model = "qwen3-coder-next"`
-and a provider whose `base_url` points at the local server's `/v1` endpoint.
+Never set a local or combined static catalog in the normal base config:
+`model_catalog_json` replaces live discovery instead of extending it, hiding
+newly released OpenAI models. Catalog paths must be absolute. Start a new
+Codex process after changes. Direct per-host connections using the unqualified
+catalog also belong in their own explicit profiles.
 
 ## Repository wrapper
 
-`bin/codex-local-llm` sets `model_catalog_json` automatically in its isolated
-`CODEX_HOME`, so no edit to `~/.codex/config.toml` is needed. This keeps local
-LLM state separate from the user's normal OpenAI Codex installation.
+`bin/codex-local-llm` selects the installed `local-llm` profile in the usual
+Codex home. It does not create an isolated `CODEX_HOME` or install the profile.
 
-The wrapper catalog intentionally retains the unqualified `qwen3-coder-next`
-ID for direct per-host wrapper use. The wrapper-free fleet profile uses the
+The direct-host catalog retains the unqualified `qwen3-coder-next` ID.
+Both the wrapper and the standalone fleet profile use the
 separate [`local-router-model-catalog.json`](./local-router-model-catalog.json)
-with the qualified router IDs `macmini/qwen3-coder-next` and
-`m4max/qwen3-coder-next`; start it with `codex --profile local-llm`.
+with the qualified router IDs `macmini/qwen3-coder-next`,
+`m4max/qwen3-coder-next`, and `gmktec/qwen3-coder-next`.
 
 Verify the catalog parses before launching a session:
 

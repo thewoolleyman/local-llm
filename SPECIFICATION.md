@@ -406,6 +406,22 @@ access merely for convenience.
 
 ### Normal Codex and local fleet profile
 
+Install or repair this split on each client (Python 3.11+, Codex 0.134+):
+
+```bash
+python3 bin/install-codex-local-llm.py
+```
+
+The installer removes only the base config's top-level model/provider/catalog
+overrides, preserves unrelated settings and existing provider authentication,
+and installs the local profile with this checkout's absolute catalog path.
+Changed files receive private `.bak-*` backups; repeated runs are idempotent.
+Run from the durable client checkout, not a temporary worktree. Other base
+providers or legacy profile tables cause a safe error for review. Fresh
+clients need the router key installed first; only its path is referenced.
+`--codex-home` and `--key-file` select nondefault locations. The VPS's
+`vps-info/services/codex-config/install.sh` calls this shared installer.
+
 The normal `~/.codex/config.toml` defines the `local-llm-fleet` provider but
 does not set `model_catalog_json` or a default `model`. Ordinary OpenAI
 sessions therefore use the current account-visible catalog and recommended
@@ -484,11 +500,10 @@ debugging Codex, verify the client can reach the router:
 curl http://macmini:8081/v1/models
 ```
 
-The model catalog is also client-local. A standalone client may use `-m`
-explicitly after defining the provider, but the picker requires the merged
-catalog or the checked-in local router catalog to be installed and referenced
-in that client's `CODEX_HOME`/config. The repository wrapper handles this
-isolation automatically.
+The model catalog is also client-local. The local picker requires the checked-in
+router catalog referenced in the `local-llm` profile. Run the installer before
+using the wrapper on a new client: the wrapper selects but does not install
+that profile. Never put a merged catalog in the normal config.
 
 Codex's `model_provider` setting is global. It is intentionally not set to
 `local-llm-fleet` in the normal config, because that would send the existing

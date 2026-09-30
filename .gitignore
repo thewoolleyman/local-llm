@@ -1,6 +1,9 @@
 # tmp
 /tmp/
 
+# Python installer tests
+__pycache__/
+
 # Playwright MCP browser snapshots
 .playwright-mcp/
 
