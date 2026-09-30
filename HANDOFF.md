@@ -75,6 +75,23 @@ does NOT prove the normal shared-daemon TUI was fixed. Restart the shared
 daemon when its tasks can be interrupted, then prove plain `codex` → `/model`
 in tmux. Do not restart it automatically from the installer during active work.
 
+Completed interactive verification on 2026-09-30: after an
+explicitly authorized `codex app-server daemon restart`, plain `codex` in
+tmux session `codex-model-picker-proof`, window `plain-codex`, showed
+GPT-6.1-Sol (current), GPT-6-Astra, GPT-6-Sol, GPT-6-Luna, GPT-5.6-Sol,
+GPT-5.6-Terra, GPT-5.6-Luna, and GPT-5.5. Resuming the existing
+`llm-provider-manager` conversation **without** `--no-daemon` showed the
+same list, retaining its previous GPT-5.6-Sol selection. These are actual
+interactive `/model` captures, not an inferred API result.
+
+The active overseer conversation was also restarted with its skill rerun.
+The shared daemon launched over SSH lacked `TMUX_PANE`, causing the skill's
+bootstrap to refuse. After a safe stop, resuming that same conversation in
+its original tmux pane with `codex --no-daemon resume ...` restored genuine
+pane inheritance. `overseer-start` exited 0 and reused the existing live
+daemon pane. Use a dedicated process for pane-bound skills; do not spoof
+pane variables or restart the shared daemon automatically.
+
 For diagnostics, this Codex release rejects `--profile` on `app-server`.
 Use `codex --profile local-llm` / `exec` for real runtime verification; to
 inspect its catalog through `app-server model/list`, supply the profile's
