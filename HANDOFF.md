@@ -66,11 +66,13 @@ From this repo on `chads-macbook-pro`, the client wrappers use the fleet router:
 loads the user's MCP config so interactive local Claude sessions still have MCP.
 This is deliberate: do not remove MCP as a workaround for keychain prompts.
 
-Codex starts with `model_provider=local-llm-fleet`, so `/model` can select any
-router-qualified model without changing the normal frontier setup. Pi exposes
-the same models through its native model picker/cycling. Once the `gmktec` peer
-is live in the router (see "Adding gmktec-xubuntu"), `gmktec/qwen3-coder-next`
-joins `macmini/` and `m4max/qwen3-coder-next` in every client picker.
+Codex starts with the `local-llm` profile, which selects both
+`model_provider=local-llm-fleet` and the local-only catalog, so `/model` can
+select any router-qualified model without freezing the normal OpenAI catalog.
+Ordinary Codex sessions leave `model_catalog_json` unset and therefore receive
+new account-visible OpenAI models automatically. Pi exposes the same local
+models through its native model picker/cycling. `gmktec/qwen3-coder-next`
+joins `macmini/` and `m4max/qwen3-coder-next` in every local client picker.
 
 The watchdog plan is [tmp/watchdog-plan.md](./tmp/watchdog-plan.md). The
 current one-shot observer/recovery command is:

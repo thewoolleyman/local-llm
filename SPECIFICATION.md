@@ -317,9 +317,10 @@ the endpoint is reachable. The checked-in
 declares the stable `qwen3-coder-next` model ID with protocol-valid fields,
 including the deployed 65,536-token context and local coding-tool capabilities.
 
-The normal Codex installation supplies the merged model catalog and fleet
-provider. The wrapper selects that provider only for its process, so the
-normal frontier-provider default remains unchanged.
+The normal Codex installation supplies the fleet provider definition, while
+the dedicated `local-llm` profile supplies the local-only model catalog and
+selects that provider. The wrapper loads that profile only for its process, so
+the normal OpenAI provider and live account-visible catalog remain unchanged.
 
 Supported overrides:
 
@@ -382,15 +383,15 @@ The wrappers are also installed on this Mac as symlinks under
 
 ## 7. Codex-specific configuration
 
-`bin/codex-local-llm` selects the already-configured fleet provider with the
-process-only equivalent of:
+`bin/codex-local-llm` selects the already-configured fleet provider and
+local-only catalog with the process-only equivalent of:
 
 ```bash
-codex -c model_provider=local-llm-fleet
+codex --profile local-llm
 ```
 
-This leaves Codex's normal model catalog, `/model` picker, and session model
-state in charge. It does not change the normal `~/.codex/config.toml`.
+This leaves the local profile's `/model` picker and session model state in
+charge. It does not change the normal `~/.codex/config.toml`.
 
 Current Codex supports only `wire_api = "responses"` for a custom provider.
 `wire_api = "chat"` is removed in the installed CLI, not merely deprecated;
@@ -403,27 +404,25 @@ noninteractive verification, `codex exec` reported `approval: never` together
 with `sandbox: read-only`; do not broaden a local model to unapproved host
 access merely for convenience.
 
-### Normal Codex fleet profile
+### Normal Codex and local fleet profile
 
-The user's normal Codex installation now has a merged catalog at
-`~/.codex/model-catalog-with-local.json`. It contains the current frontier
-catalog from `~/.codex/models_cache.json` plus the router-qualified local
-entries (`macmini/`, `m4max/`, and `gmktec/qwen3-coder-next`).
-`~/.codex/config.toml` points `model_catalog_json` at that merged
-file and defines the `local-llm-fleet` provider, so the normal model picker
-shows all local router models alongside the frontier models.
+The normal `~/.codex/config.toml` defines the `local-llm-fleet` provider but
+does not set `model_catalog_json` or a default `model`. Ordinary OpenAI
+sessions therefore use the current account-visible catalog and recommended
+model supplied by Codex, including newly released models without rebuilding a
+local file.
 
-The merged catalog is a local generated artifact rather than a repository
-file. When Codex refreshes `models_cache.json` after a client update, rebuild it
-with:
+The separate `~/.codex/local-llm.config.toml` profile selects the fleet
+provider and points `model_catalog_json` at the checked-in local-only catalog,
+[`codex-metadata/local-router-model-catalog.json`](./codex-metadata/local-router-model-catalog.json).
+Use `codex --profile local-llm` or `bin/codex-local-llm` to get the native
+picker containing `macmini/`, `m4max/`, and `gmktec/qwen3-coder-next`.
 
-```bash
-jq --slurpfile local \
-  /Users/cwoolley/workspace/local-llm/codex-metadata/local-router-model-catalog.json \
-  '.models += $local[0].models' \
-  ~/.codex/models_cache.json > ~/.codex/model-catalog-with-local.json
-chmod 600 ~/.codex/model-catalog-with-local.json
-```
+Codex currently treats `model_catalog_json` as a startup catalog override,
+not an additive overlay. A single merged picker would freeze the OpenAI side
+until someone regenerated the file and restarted Codex. The split profiles
+avoid that stale-catalog failure and also prevent choosing an OpenAI model
+while the process-level local provider is active.
 
 ### Provider selection and portable standalone clients
 
@@ -435,13 +434,13 @@ Start a new Codex process to change providers. An already-running interactive
 session should not be expected to change its transport/provider mid-session.
 
 The preferred paths are the repository wrapper (`bin/codex-local-llm`) or the
-standalone `local-llm` profile above. For a client that already has the
-provider definition and catalog, a temporary provider override can be used
-without editing the normal config:
+standalone `local-llm` profile above. A provider-only override is useful only
+when that process already has a compatible local catalog; the normal live
+OpenAI catalog intentionally does not contain the local router IDs:
 
 ```bash
-# Force the local provider, then use the model picker.
-codex -c model_provider=local-llm-fleet
+# Select the local provider and local-only model picker.
+codex --profile local-llm
 
 # Force the normal OpenAI provider, then use the frontier-model picker.
 codex -c model_provider=openai
@@ -451,12 +450,11 @@ codex -c model_provider=openai
 is wanted, for example:
 
 ```bash
-codex -c model_provider=local-llm-fleet -m m4max/qwen3-coder-next
-codex -c model_provider=openai -m gpt-5.6-terra
+codex --profile local-llm -m m4max/qwen3-coder-next
+codex -c model_provider=openai -m gpt-6-astra
 ```
 
-The picker may display catalog entries that are not servable by the selected
-provider. Choose a model belonging to the provider forced for that process.
+The split catalogs keep each picker aligned with the process-level provider.
 The `--oss` option is for Codex's built-in Ollama/LM Studio paths; it is not
 the switch for this Tailscale fleet router.
 
@@ -504,11 +502,12 @@ Start an interactive fleet session with:
 codex --profile local-llm
 ```
 
-Inside that session, `/models` lists:
+Inside that session, `/model` lists:
 
 ```text
 macmini/qwen3-coder-next
 m4max/qwen3-coder-next
+gmktec/qwen3-coder-next
 ```
 
 The noninteractive smoke test is:

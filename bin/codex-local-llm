@@ -36,8 +36,7 @@ fi
 local_llm_require_router_key
 local_llm_check_router_reachable
 
-# The normal ~/.codex config already contains the fleet provider and merged
-# catalog. This process-only override selects that provider without changing
-# the user's normal frontier-provider default or inventing model-selection
-# state. /model can therefore select any model exposed by the fleet.
-exec codex -c model_provider=local-llm-fleet "$@"
+# The dedicated profile selects both the fleet provider and its local-only
+# catalog. Keeping that catalog out of the normal ~/.codex/config.toml lets
+# ordinary OpenAI sessions refresh their account-visible catalog automatically.
+exec codex --profile local-llm "$@"
