@@ -53,6 +53,24 @@ wanted there.
 
 ## Normal client use
 
+The portable Codex setup is now `python3 bin/install-codex-local-llm.py`
+(Python 3.11+, Codex 0.134+). Run it from the durable checkout before using
+the local wrapper on a new host. It removes base model/catalog pins, preserves
+unrelated config and existing authentication, and installs the local profile
+with private backups. The VPS GitOps `codex-config` installer calls it.
+
+Verified on `vps` on 2026-09-30 with Codex 0.159.2: normal `model/list`
+includes `gpt-6-astra` and defaults to `gpt-6.1-sol`; the local catalog lists
+all three fleet IDs; the installed wrapper returned `LOCAL_MODEL_OK` with
+read-only sandbox and MCP disabled only for the smoke-test invocation.
+The CLI emitted a skills-context-budget warning, but inference succeeded.
+Installer tests passed on both Mac and VPS and repeat installation was clean.
+
+For diagnostics, this Codex release rejects `--profile` on `app-server`.
+Use `codex --profile local-llm` / `exec` for real runtime verification; to
+inspect its catalog through `app-server model/list`, supply the profile's
+model/provider/catalog values as explicit `-c` overrides.
+
 From this repo on `chads-macbook-pro`, the client wrappers use the fleet router:
 
 ```bash
