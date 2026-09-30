@@ -59,12 +59,21 @@ the local wrapper on a new host. It removes base model/catalog pins, preserves
 unrelated config and existing authentication, and installs the local profile
 with private backups. The VPS GitOps `codex-config` installer calls it.
 
-Verified on `vps` on 2026-09-30 with Codex 0.159.2: normal `model/list`
+Verified on `vps` on 2026-09-30 with Codex 0.159.2: a fresh standalone `model/list`
 includes `gpt-6-astra` and defaults to `gpt-6.1-sol`; the local catalog lists
 all three fleet IDs; the installed wrapper returned `LOCAL_MODEL_OK` with
 read-only sandbox and MCP disabled only for the smoke-test invocation.
 The CLI emitted a skills-context-budget warning, but inference succeeded.
 Installer tests passed on both Mac and VPS and repeat installation was clean.
+
+Correction from interactive verification: plain `codex` reconnects to an
+already-running shared app-server daemon, which retained the old combined
+catalog even after the file migration. The tmux `/model` picker still showed
+GPT-5.6 plus Qwen. Resuming `llm-provider-manager` with `--no-daemon` visibly
+showed GPT-6-Astra and GPT-6.1-Sol. A fresh standalone app-server or exec test
+does NOT prove the normal shared-daemon TUI was fixed. Restart the shared
+daemon when its tasks can be interrupted, then prove plain `codex` → `/model`
+in tmux. Do not restart it automatically from the installer during active work.
 
 For diagnostics, this Codex release rejects `--profile` on `app-server`.
 Use `codex --profile local-llm` / `exec` for real runtime verification; to

@@ -109,6 +109,9 @@ def install(codex_dir, catalog, key_file):
     atomic_save(config, updated_base)
     print(f"OK: OpenAI defaults unpinned; local fleet profile: {profile}")
     print("Start a new session: codex OR codex-local-llm (codex --profile local-llm)")
+    print("A running shared app-server daemon can retain the old catalog even in new TUIs.")
+    print("When its tasks are idle: codex app-server daemon restart; then verify /model.")
+    print("For an isolated check without interrupting other tasks: codex --no-daemon")
 
 
 def main():
