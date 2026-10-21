@@ -140,3 +140,7 @@ switch away) rather than assuming current headroom will hold.
 Any change made to files in this repo should be automatically committed and
 pushed to `origin/main` (no need to ask for confirmation first) — treat this
 as a standing instruction for agents working in this repo.
+
+## Livespec instruction-only adopter
+
+This repository is a livespec instruction-only adopter. It enables the `livespec` and `livespec-driver-claude` plugins. The SessionStart hook runs `.claude/hooks/ensure_plugins.py` to install and update those plugins from the committed settings.
