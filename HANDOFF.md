@@ -6,6 +6,14 @@ deployed design and verification evidence.
 
 ## Status at a glance
 
+2026-10-25: OpenAI Sol can run inside the full Claude Code harness through
+`bin/claude-openai` and CLIProxyAPI v8.0.42 on `127.0.0.1:8317`, using this
+VPS's existing ChatGPT credential. Both `gpt-6.1-sol` (default, 500K context)
+and `gpt-6-sol` answered. Hooks, plugins, MCP, ListAgents and bidirectional
+SendMessage were verified in the coordinator project. See
+[setup, commands and evidence](deploy/claude-openai/README.md); private
+credentials/config live under `~/.config/local-llm/openai/`, outside Git.
+
 The two Mac hosts were complete as of 2026-08-06. A third host,
 `gmktec-xubuntu`, was added to the pool on 2026-08-29 and verified end-to-end
 through the router (see "Adding gmktec-xubuntu" below).

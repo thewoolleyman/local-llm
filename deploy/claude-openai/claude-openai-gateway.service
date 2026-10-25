@@ -1,0 +1,12 @@
+[Unit]
+Description=Claude Code OpenAI Messages gateway (CLIProxyAPI)
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/cli-proxy-api -config %h/.config/local-llm/openai/gateway.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

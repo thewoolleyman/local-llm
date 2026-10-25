@@ -273,6 +273,14 @@ while its model loads.
 
 ## 6. Client wrapper contract
 
+For OpenAI Sol inside the full Claude Code coordinator harness, use the
+separate `bin/claude-openai` wrapper and
+[gateway setup and verification](deploy/claude-openai/README.md). It uses a
+loopback CLIProxyAPI gateway and ChatGPT authentication rather than the
+local model fleet. It preserves hooks, plugins, MCP and project instructions
+by using normal Claude startup; the local wrapper's `--bare` mode skips
+hooks, plugin sync, auto-memory and CLAUDE.md auto-discovery.
+
 The supported entry points are:
 
 - `bin/claude-local-llm`
