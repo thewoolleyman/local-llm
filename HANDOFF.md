@@ -13,6 +13,11 @@ and `gpt-6-sol` answered. Hooks, plugins, MCP, ListAgents and bidirectional
 SendMessage were verified in the coordinator project. See
 [setup, commands and evidence](deploy/claude-openai/README.md); private
 credentials/config live under `~/.config/local-llm/openai/`, outside Git.
+The wrapper now discovers Codex's live model list and the local fleet on each
+launch and provides a combined native picker. Live per-model descriptions show
+target context, current usage and estimated overflow, without shrinking all
+models to 32K. See the same setup document for the private settings overlay,
+context guard and current Claude context-handling limitations.
 
 The two Mac hosts were complete as of 2026-08-06. A third host,
 `gmktec-xubuntu`, was added to the pool on 2026-08-29 and verified end-to-end

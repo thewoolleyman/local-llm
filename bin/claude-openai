@@ -11,38 +11,13 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE_PATH")" && pwd)"
 export LIVESPEC_LOCAL_LLM_WRAPPER="$SCRIPT_DIR/${SOURCE_PATH##*/}"
 
-secrets_file="${CLAUDE_OPENAI_SECRETS_FILE:-$HOME/.config/local-llm/openai/secrets.env}"
+secrets_file="${CLAUDE_OPENAI_SECRETS_FILE:-${CLAUDE_OPENAI_CONFIG_DIR:-$HOME/.config/local-llm/openai}/secrets.env}"
 if [ -f "$secrets_file" ]; then
   # Private, user-owned shell environment file, never committed.
   source "$secrets_file"
 fi
 : "${CLAUDE_OPENAI_GATEWAY_KEY:?Run bin/configure-claude-openai.py first}"
-export ANTHROPIC_BASE_URL="${CLAUDE_OPENAI_BASE_URL:-http://127.0.0.1:8317}"
-export ANTHROPIC_AUTH_TOKEN="$CLAUDE_OPENAI_GATEWAY_KEY"
-export ANTHROPIC_API_KEY="$CLAUDE_OPENAI_GATEWAY_KEY"
-export ANTHROPIC_MODEL="${CLAUDE_OPENAI_MODEL:-gpt-6.1-sol}"
-export ANTHROPIC_SMALL_FAST_MODEL="$ANTHROPIC_MODEL"
-for tier in OPUS SONNET HAIKU; do
-  export "ANTHROPIC_DEFAULT_${tier}_MODEL=$ANTHROPIC_MODEL"
-  export "ANTHROPIC_DEFAULT_${tier}_MODEL_NAME=OpenAI ($ANTHROPIC_MODEL)"
-  export "ANTHROPIC_DEFAULT_${tier}_MODEL_DESCRIPTION=OpenAI via local Messages gateway"
-done
-export ANTHROPIC_CUSTOM_MODEL_OPTION="$ANTHROPIC_MODEL"
-export ANTHROPIC_CUSTOM_MODEL_OPTION_NAME="OpenAI ($ANTHROPIC_MODEL)"
-export ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION="OpenAI via local Messages gateway"
-# Verified host catalog: 500K for 6.1 Sol, 272K for the older Sol models.
-case "$ANTHROPIC_MODEL" in
-  gpt-6.1-sol) context=500000 ;;
-  gpt-6-sol|gpt-5.6-sol) context=272000 ;;
-  *) context="${CLAUDE_OPENAI_CONTEXT_TOKENS:?Set context for this model explicitly}" ;;
-esac
-export CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_OPENAI_CONTEXT_TOKENS:-$context}"
-export CLAUDE_CODE_DISABLE_1M_CONTEXT=1
-export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-unset CLAUDE_CODE_SIMPLE CLAUDE_CODE_SAFE_MODE
-unset CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY
-unset ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL CLAUDE_CODE_OAUTH_TOKEN
-# Do not use --bare: coordinator hooks, plugins, memory, project instructions,
-# MCP and cross-session messaging must load through normal Claude startup.
-# Explicit selection also overrides the model stored in a resumed session.
-exec claude --model "$ANTHROPIC_MODEL" "$@"
+export CLAUDE_OPENAI_GATEWAY_KEY
+# Model availability, defaults and context come from Codex and fleet discovery.
+# The launcher supplies session-only picker settings and preserves full startup.
+exec python3 "$SCRIPT_DIR/claude-model-picker.py" "$@"

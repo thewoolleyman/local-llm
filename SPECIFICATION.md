@@ -281,6 +281,13 @@ local model fleet. It preserves hooks, plugins, MCP and project instructions
 by using normal Claude startup; the local wrapper's `--bare` mode skips
 hooks, plugin sync, auto-memory and CLAUDE.md auto-discovery.
 
+That wrapper discovers Codex's current selectable models and the live local
+fleet on each launch, exposes both through a combined native picker, and
+refreshes per-model context warnings from actual usage. A smaller model stays
+selectable; the picker shows estimated overflow and a prompt hook blocks
+already-oversized conversations until the user compacts or starts fresh.
+The session is not capped at the smallest model's window.
+
 The supported entry points are:
 
 - `bin/claude-local-llm`

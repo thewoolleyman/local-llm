@@ -7,14 +7,26 @@ it never modifies Codex credentials. Existing gateway credentials are preserved.
 import argparse
 import base64
 import datetime
+import fcntl
 import json
 import os
 from pathlib import Path
 import secrets
 
 
-def private_json(path, value):
+def private_json(path, value, *, in_place=False):
     # Replace atomically, with restrictive permissions from the first write.
+    if in_place:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "r+") as stream:
+            fcntl.flock(stream, fcntl.LOCK_EX)
+            stream.seek(0)
+            json.dump(value, stream, indent=2)
+            stream.truncate()
+            stream.flush()
+            os.fsync(stream.fileno())
+        return
     temp = path.with_name(path.name + ".tmp")
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
@@ -57,13 +69,15 @@ def configure(config_dir, codex_auth):
     key = assignment[1]
     if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
         raise ValueError("Gateway key must be 64 lowercase hex characters")
-    private_json(config_dir / "gateway.json", {
-        "config-version": 8,
-        "server": {"host": "127.0.0.1", "port": 8317},
-        "access": {"api-keys": [key]},
-        "oauth": {"auth-dir": str(auth_dir.resolve())},
-        "management": {"disable-control-panel": True},
-    })
+    config_file = config_dir / "gateway.json"
+    config = json.loads(config_file.read_text()) if config_file.exists() else {}
+    config.update({"config-version": 8})
+    config.setdefault("server", {}).update({"host": "127.0.0.1", "port": 8317})
+    config.setdefault("access", {})["api-keys"] = [key]
+    config.setdefault("oauth", {})["auth-dir"] = str(auth_dir.resolve())
+    config.setdefault("management", {})["disable-control-panel"] = True
+    # Preserve the live gateway's inode watch when reconfiguring it.
+    private_json(config_file, config, in_place=True)
     print(f"Gateway config ready: {config_dir / 'gateway.json'} (credentials not printed)")
 
 
