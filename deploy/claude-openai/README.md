@@ -18,9 +18,9 @@ verified against the publisher's `checksums.txt`.
 With Codex already signed in using ChatGPT:
 
 ```bash
-python3 /data/projects/local-llm/bin/configure-claude-openai.py
+python3 "$HOME/workspace/local-llm/bin/configure-claude-openai.py"
 mkdir -p ~/.config/systemd/user
-cp /data/projects/local-llm/deploy/claude-openai/claude-openai-gateway.service \
+cp "$HOME/workspace/local-llm/deploy/claude-openai/claude-openai-gateway.service" \
   ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now claude-openai-gateway.service
@@ -60,8 +60,8 @@ upstream configuration is not implemented by this helper.
 From the existing coordinator pane, after exiting the old process:
 
 ```bash
-cd /data/projects/livespec-dev-tooling
-/data/projects/local-llm/bin/claude-openai --dangerously-skip-permissions \
+cd "$HOME/workspace/livespec-dev-tooling"
+"$HOME/workspace/local-llm/bin/claude-openai" --dangerously-skip-permissions \
   --resume gitops-fleet-capacity-monitoring
 ```
 
